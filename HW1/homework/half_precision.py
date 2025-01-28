@@ -47,28 +47,95 @@ class HalfLinear(torch.nn.Linear):
         # Cast the output back to float32
         return out_half.float()
 
+
+class FullPrecisionLayerNorm(torch.nn.Module):
+    """
+    A LayerNorm that runs in float32 even if the input is float16. 
+    """
+    def __init__(self, num_channels: int, eps: float = 1e-5, affine: bool = True):
+        super().__init__()
+        self.num_channels = num_channels
+        self.eps = eps
+        self.affine = affine
+        if affine:
+            # Keep parameters in float32
+            self.weight = torch.nn.Parameter(torch.ones(num_channels, dtype=torch.float32))
+            self.bias   = torch.nn.Parameter(torch.zeros(num_channels, dtype=torch.float32))
+        else:
+            self.register_parameter("weight", None)
+            self.register_parameter("bias", None)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1) Cast input to float32
+        x_32 = x.float()
+
+        # 2) Optionally cast weight/bias to float32 (they already are)
+        w_32 = self.weight if self.weight is not None else None
+        b_32 = self.bias   if self.bias  is not None else None
+
+        # 3) Apply group_norm in float32
+        out_32 = torch.nn.functional.group_norm(
+            x_32, 
+            num_groups=1, 
+            weight=w_32, 
+            bias=b_32, 
+            eps=self.eps
+        )
+
+        # 4) Cast back to x’s original dtype (float16 or float32) if needed
+        return out_32.to(x.dtype)
+
+
+
+
+
 class HalfBigNet(torch.nn.Module):
     """
-    A BigNet where all weights are in half precision. Make sure that the normalization uses full
-    precision though to avoid numerical instability.
+    A BigNet where all linear weights are in half precision, but
+    the layer normalization runs in float32.
     """
 
     class Block(torch.nn.Module):
         def __init__(self, channels: int):
             super().__init__()
-            # TODO: Implement me (feel free to copy and reuse code from bignet.py)
-            raise NotImplementedError()
+            # Each block is a 3-layer MLP with ReLU, all in half precision
+            self.model = torch.nn.Sequential(
+                HalfLinear(channels, channels),
+                torch.nn.ReLU(),
+                HalfLinear(channels, channels),
+                torch.nn.ReLU(),
+                HalfLinear(channels, channels),
+            )
 
-        def forward(self, x: torch.Tensor):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            # Residual connection: y = x + MLP(x)
             return self.model(x) + x
 
     def __init__(self):
         super().__init__()
-        # TODO: Implement me (feel free to copy and reuse code from bignet.py)
-        raise NotImplementedError()
+        
+        # For convenience, define the dimension in a global or pass it in:
+        BIGNET_DIM = 1024
+        
+        # Stack multiple (Block + LayerNorm) layers, 
+        # similar to the original BigNet design.
+        self.model = torch.nn.Sequential(
+            self.Block(BIGNET_DIM),
+            FullPrecisionLayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            FullPrecisionLayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            FullPrecisionLayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            FullPrecisionLayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            FullPrecisionLayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
+
 
 
 def load(path: Path | None) -> HalfBigNet:
