@@ -13,19 +13,39 @@ class HalfLinear(torch.nn.Linear):
         bias: bool = True,
     ) -> None:
         """
-        Implement a half-precision Linear Layer.
-        Feel free to use the torch.nn.Linear class as a parent class (it makes load_state_dict easier, names match).
-        Feel free to set self.requires_grad_ to False, we will not backpropagate through this layer.
+        A Linear layer whose parameters and internal computation are done in float16,
+        while input and output remain float32.
         """
-        # TODO: Implement me
-        raise NotImplementedError()
+        # Use nn.Linear constructor for convenient weight/bias creation
+        super().__init__(in_features, out_features, bias=bias)
+
+        # Cast parameters to float16
+        self.weight = torch.nn.Parameter(self.weight.half())
+        if bias:
+            self.bias = torch.nn.Parameter(self.bias.half())
+
+        # (Optional) If you truly do not need gradient updates, disable gradient:
+        self.weight.requires_grad = False
+        if bias:
+            self.bias.requires_grad = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Hint: Use the .to method to cast a tensor to a different dtype (i.e. torch.float16 or x.dtype)
-        # The input and output should be of x.dtype = torch.float32
-        # TODO: Implement me
-        raise NotImplementedError()
+        """
+        The input x is float32. Internally, we cast x to float16 and
+        perform the linear operation in float16, then cast back to float32.
+        """
+        # Cast input to float16
+        x_half = x.half()
 
+        # Perform linear in half precision
+        out_half = torch.nn.functional.linear(
+            x_half, 
+            self.weight, 
+            self.bias
+        )
+
+        # Cast the output back to float32
+        return out_half.float()
 
 class HalfBigNet(torch.nn.Module):
     """
