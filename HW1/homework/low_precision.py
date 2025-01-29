@@ -2,6 +2,8 @@ from pathlib import Path
 
 import torch
 
+import torch.nn as nn
+
 from .bignet import BIGNET_DIM, LayerNorm  # noqa: F401
 
 
@@ -71,42 +73,86 @@ class Linear4Bit(torch.nn.Module):
     def _load_state_dict_pre_hook(
         self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
     ):
-        if f"{prefix}weight" in state_dict:
-            # Load the original weights and remove them from the state_dict (mark them as loaded)
-            weight = state_dict[f"{prefix}weight"]  # noqa: F841
-            del state_dict[f"{prefix}weight"]
-            # TODO: Quantize the weights and store them in self.weight_q4 and self.weight_norm
-            raise NotImplementedError()
+        """
+        This hook is called before the state_dict is loaded. Here, we read the original 'weight'
+        from the state_dict, quantize it to 4-bit chunks, and store in 'weight_q4' + 'weight_norm'.
+        """
+        weight_key = f"{prefix}weight"
+        if weight_key in state_dict:
+            # 1) Extract the full-precision weight from the state_dict
+            weight = state_dict[weight_key]  # shape [out_features, in_features]
+            del state_dict[weight_key]       # remove it so it won't be loaded by PyTorch
+
+            # 2) Flatten the weight to 1D
+            weight_1d = weight.view(-1)
+
+            # 3) Quantize in 4-bit chunks using your block_quantize_4bit
+            x_quant_4, normalization = block_quantize_4bit(weight_1d, group_size=self._group_size)
+            # x_quant_4 has shape [num_chunks, group_size//2]
+            # normalization has shape [num_chunks, 1]
+
+            # 4) Copy data into buffers
+            self.weight_q4.copy_(x_quant_4)
+            self.weight_norm.copy_(normalization.half())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():
-            # TODO: Dequantize and call the layer
-            # Hint: You can use torch.nn.functional.linear
-            raise NotImplementedError()
+        """
+        1) Dequantize weights from 4-bit to float32
+        2) Perform matmul with the input x
+        3) Add bias if present
+        4) Return result in float32
+        """
+        # 1) Dequantize
+        #    block_dequantize_4bit expects shape [num_chunks, group_size//2]
+        #    => produces a 1D or 2D output which we then reshape to [out_features, in_features].
+        weight_dequant = block_dequantize_4bit(self.weight_q4, self.weight_norm)
+        weight_dequant = weight_dequant.view(self._shape)  # [out_features, in_features]
+
+        # 2) Linear op (x is [batch_size, in_features], or some shape with last dim = in_features)
+        out = torch.nn.functional.linear(x, weight_dequant, self.bias)
+
+        return out
 
 
-class BigNet4Bit(torch.nn.Module):
+class BigNet4Bit(nn.Module):
     """
     A BigNet where all weights are in 4bit precision. Use the Linear4Bit module for this.
     It is fine to keep all computation in float32.
     """
 
-    class Block(torch.nn.Module):
-        def __init__(self, channels):
+    class Block(nn.Module):
+        def __init__(self, channels: int):
             super().__init__()
-            # TODO: Implement me (feel free to copy and reuse code from bignet.py)
-            raise NotImplementedError()
+            # A 3-layer MLP with ReLU activations between them,
+            # then add a residual connection.
+            self.model = nn.Sequential(
+                Linear4Bit(channels, channels),
+                nn.ReLU(),
+                Linear4Bit(channels, channels),
+                nn.ReLU(),
+                Linear4Bit(channels, channels),
+            )
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
+            # Residual connection
             return self.model(x) + x
 
     def __init__(self):
         super().__init__()
-        # TODO: Implement me (feel free to copy and reuse code from bignet.py)
-        raise NotImplementedError()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)
+        # Stack multiple (Block -> LayerNorm) pairs, replicating the original BigNet design.
+        self.model = nn.Sequential(
+            self.Block(BIGNET_DIM),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+            LayerNorm(BIGNET_DIM),
+            self.Block(BIGNET_DIM),
+        )
 
 
 def load(path: Path | None) -> BigNet4Bit:
