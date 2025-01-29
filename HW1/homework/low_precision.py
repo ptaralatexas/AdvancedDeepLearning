@@ -153,6 +153,8 @@ class BigNet4Bit(nn.Module):
             LayerNorm(BIGNET_DIM),
             self.Block(BIGNET_DIM),
         )
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
 
 
 def load(path: Path | None) -> BigNet4Bit:
