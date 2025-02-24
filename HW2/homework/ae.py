@@ -85,53 +85,50 @@ class PatchAutoEncoderBase(abc.ABC):
 
 
 class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
-    """
-    Implement a PatchLevel AutoEncoder
-
-    Hint: Convolutions work well enough, no need to use a transformer unless you really want.
-    Hint: See PatchifyLinear and UnpatchifyLinear for how to use convolutions with the input and
-          output dimensions given.
-    Hint: You can get away with 3 layers or less.
-    Hint: Many architectures work here (even a just PatchifyLinear / UnpatchifyLinear).
-          However, later parts of the assignment require both non-linearities (i.e. GeLU) and
-          interactions (i.e. convolutions) between patches.
-    """
-
     class PatchEncoder(torch.nn.Module):
-        """
-        (Optionally) Use this class to implement an encoder.
-                     It can make later parts of the homework easier (reusable components).
-        """
-
         def __init__(self, patch_size: int, latent_dim: int, bottleneck: int):
             super().__init__()
-            raise NotImplementedError()
+            self.patchify = PatchifyLinear(patch_size, latent_dim)
+            self.conv1 = torch.nn.Conv2d(latent_dim, latent_dim, kernel_size=3, stride=1, padding=1)
+            self.conv2 = torch.nn.Conv2d(latent_dim, bottleneck, kernel_size=3, stride=1, padding=1)
+            self.activation = torch.nn.GELU()
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            raise NotImplementedError()
+            x = self.patchify(x)  # (B, H//patch_size, W//patch_size, latent_dim)
+            x = hwc_to_chw(x)  # Convert to (B, latent_dim, H//patch_size, W//patch_size)
+            x = self.activation(self.conv1(x))
+            x = self.activation(self.conv2(x))  # (B, bottleneck, H//patch_size, W//patch_size)
+            return chw_to_hwc(x)  # Convert back to (B, H//patch_size, W//patch_size, bottleneck)
 
     class PatchDecoder(torch.nn.Module):
         def __init__(self, patch_size: int, latent_dim: int, bottleneck: int):
             super().__init__()
-            raise NotImplementedError()
+            self.conv1 = torch.nn.Conv2d(bottleneck, latent_dim, kernel_size=3, stride=1, padding=1)
+            self.conv2 = torch.nn.Conv2d(latent_dim, latent_dim, kernel_size=3, stride=1, padding=1)
+            self.unpatchify = UnpatchifyLinear(patch_size, latent_dim)
+            self.activation = torch.nn.GELU()
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            raise NotImplementedError()
+            x = hwc_to_chw(x)  # Convert to (B, bottleneck, h, w)
+            x = self.activation(self.conv1(x))
+            x = self.activation(self.conv2(x))
+            x = chw_to_hwc(x)  # Convert back to (B, h, w, latent_dim)
+            x = self.unpatchify(x)  # (B, H, W, 3)
+            return x
 
     def __init__(self, patch_size: int = 25, latent_dim: int = 128, bottleneck: int = 128):
         super().__init__()
-        raise NotImplementedError()
+        self.encoder = self.PatchEncoder(patch_size, latent_dim, bottleneck)
+        self.decoder = self.PatchDecoder(patch_size, latent_dim, bottleneck)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """
-        Return the reconstructed image and a dictionary of additional loss terms you would like to
-        minimize (or even just visualize).
-        You can return an empty dictionary if you don't have any additional terms.
-        """
-        raise NotImplementedError()
+        encoded = self.encode(x)
+        reconstructed = self.decode(encoded)
+        loss_terms = {}  # Add additional loss terms here if needed
+        return reconstructed, loss_terms
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
+        return self.encoder(x)
 
     def decode(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
+        return self.decoder(x)
