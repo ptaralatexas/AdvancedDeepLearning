@@ -12,7 +12,12 @@ def load() -> torch.nn.Module:
     print(f"Loading {model_name} from {model_path}")
     
     model = PatchAutoEncoder()
-    model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")))
+    state_dict = torch.load(model_path, map_location=torch.device("cpu"))  # ✅ Load state_dict only
+    if isinstance(state_dict, dict):  # ✅ Ensure it's a state_dict before loading
+        model.load_state_dict(state_dict)
+    else:
+        raise TypeError(f"Expected state_dict to be dict-like, but got {type(state_dict)}.")
+
     return model
 
 
@@ -86,15 +91,14 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
     Hint: See PatchifyLinear and UnpatchifyLinear for how to use convolutions with the input and
           output dimensions given.
     Hint: You can get away with 3 layers or less.
-    Hint: Many architectures work here (even a just PatchifyLinear / UnpatchifyLinear).
+    Hint: Many architectures work here (even just PatchifyLinear / UnpatchifyLinear).
           However, later parts of the assignment require both non-linearities (i.e. GeLU) and
           interactions (i.e. convolutions) between patches.
     """
 
     class PatchEncoder(torch.nn.Module):
         """
-        (Optionally) Use this class to implement an encoder.
-                     It can make later parts of the homework easier (reusable components).
+        Encoder that transforms input images into a lower-dimensional latent space.
         """
 
         def __init__(self, patch_size: int, latent_dim: int, bottleneck: int):
@@ -107,35 +111,42 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
             self.activation = torch.nn.GELU()
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            x = self.patchify(x)
-            x = hwc_to_chw(x)
+            x = self.patchify(x)  # (B, H//patch_size, W//patch_size, latent_dim)
+            x = hwc_to_chw(x)  # Convert to (B, latent_dim, H//patch_size, W//patch_size)
             x = self.activation(self.bn1(self.conv1(x)))
             x = self.activation(self.bn2(self.conv2(x)))
-            return chw_to_hwc(x)
+            return chw_to_hwc(x)  # Convert back to (B, H//patch_size, W//patch_size, bottleneck)
 
     class PatchDecoder(torch.nn.Module):
+        """
+        Decoder that reconstructs the image from the encoded representation.
+        """
+
         def __init__(self, patch_size: int, latent_dim: int, bottleneck: int):
-           super().__init__()
-           self.conv1 = torch.nn.Conv2d(bottleneck, latent_dim, kernel_size=3, stride=1, padding=1)
-           self.bn1 = torch.nn.BatchNorm2d(latent_dim)
-           self.conv2 = torch.nn.Conv2d(latent_dim, latent_dim, kernel_size=3, stride=1, padding=1)
-           self.bn2 = torch.nn.BatchNorm2d(latent_dim)
-           self.unpatchify = UnpatchifyLinear(patch_size, latent_dim)
-           self.activation = torch.nn.GELU()
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(bottleneck, latent_dim, kernel_size=3, stride=1, padding=1)
+            self.bn1 = torch.nn.BatchNorm2d(latent_dim)
+            self.conv2 = torch.nn.Conv2d(latent_dim, latent_dim, kernel_size=3, stride=1, padding=1)
+            self.bn2 = torch.nn.BatchNorm2d(latent_dim)
+            self.unpatchify = UnpatchifyLinear(patch_size, latent_dim)
+            self.activation = torch.nn.GELU()
 
-        def forward(self, x: torch.Tensor, target_size: tuple) -> torch.Tensor:  # ✅ Fixed
-           x = hwc_to_chw(x)
-           x = self.activation(self.bn1(self.conv1(x)))
-           x = self.activation(self.bn2(self.conv2(x)))
-           x = chw_to_hwc(x)
-           x = self.unpatchify(x)
+        def forward(self, x: torch.Tensor, target_size: tuple) -> torch.Tensor:
+            x = hwc_to_chw(x)  # Convert to (B, bottleneck, h, w)
+            x = self.activation(self.bn1(self.conv1(x)))
+            x = self.activation(self.bn2(self.conv2(x)))
+            x = chw_to_hwc(x)  # Convert back to (B, h, w, latent_dim)
+            x = self.unpatchify(x)  # (B, H, W, 3)
 
-        # ✅ Dynamically resize to match the original input size
-           x = F.interpolate(x, size=target_size, mode="bilinear", align_corners=False)
-           return x
-
+            # ✅ Resize output to match the original input size
+            x = F.interpolate(x.permute(0, 3, 1, 2), size=target_size, mode="bilinear", align_corners=False)
+            x = x.permute(0, 2, 3, 1)  # Convert back to (B, H, W, C)
+            return x
 
     def __init__(self, patch_size: int = 25, latent_dim: int = 128, bottleneck: int = 128):
+        """
+        Initializes the Patch AutoEncoder with configurable patch size, latent dimension, and bottleneck.
+        """
         super().__init__()
         self.encoder = self.PatchEncoder(patch_size, latent_dim, bottleneck)
         self.decoder = self.PatchDecoder(patch_size, latent_dim, bottleneck)
