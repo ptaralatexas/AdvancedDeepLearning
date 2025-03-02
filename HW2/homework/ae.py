@@ -1,7 +1,15 @@
 import abc
 
 import torch
+import torch.nn.functional as F
 
+def load() -> torch.nn.Module:
+    from pathlib import Path
+
+    model_name = "PatchAutoEncoder"
+    model_path = Path(__file__).parent / f"{model_name}.pth"
+    print(f"Loading {model_name} from {model_path}")
+    return torch.load(model_path, weights_only=False)
 
 def hwc_to_chw(x: torch.Tensor) -> torch.Tensor:
     """
