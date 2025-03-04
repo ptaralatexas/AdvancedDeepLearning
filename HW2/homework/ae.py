@@ -10,14 +10,17 @@ def load() -> torch.nn.Module:
     model_name = "PatchAutoEncoder"
     model_path = Path(__file__).parent / f"{model_name}.pth"
     print(f"Loading {model_name} from {model_path}")
-    
-    model = PatchAutoEncoder()
-    state_dict = torch.load(model_path, map_location=torch.device("cpu"))  # ✅ Load state_dict only
-    if isinstance(state_dict, dict):  # ✅ Ensure it's a state_dict before loading
-        model.load_state_dict(state_dict)
-    else:
-        raise TypeError(f"Expected state_dict to be dict-like, but got {type(state_dict)}.")
 
+    model = PatchAutoEncoder()  # ✅ Initialize model first
+    state_dict = torch.load(model_path, map_location=torch.device("cpu"))  # ✅ Load state_dict only
+
+    if not isinstance(state_dict, dict):  # ✅ Ensure we're loading a state_dict
+        raise TypeError(
+            f"Expected state_dict to be dict-like, but got {type(state_dict)}. "
+            f"Try re-saving the model using `torch.save(model.state_dict(), 'PatchAutoEncoder.pth')`."
+        )
+
+    model.load_state_dict(state_dict)  # ✅ Correctly load state_dict
     return model
 
 
@@ -138,10 +141,15 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
             x = chw_to_hwc(x)  # Convert back to (B, h, w, latent_dim)
             x = self.unpatchify(x)  # (B, H, W, 3)
 
-            # ✅ Resize output to match the original input size
-            x = F.interpolate(x.permute(0, 3, 1, 2), size=target_size, mode="bilinear", align_corners=False)
+            # ✅ Ensure target_size is correctly formatted (H, W)
+            if not isinstance(target_size, tuple) or len(target_size) != 2:
+                raise ValueError(f"Invalid target_size: {target_size}. Expected (H, W).")
+
+            # ✅ Apply resizing correctly
+            x = F.interpolate(x.permute(0, 3, 1, 2), size=(target_size[0], target_size[1]), mode="bilinear", align_corners=False)
             x = x.permute(0, 2, 3, 1)  # Convert back to (B, H, W, C)
             return x
+
 
     def __init__(self, patch_size: int = 25, latent_dim: int = 128, bottleneck: int = 128):
         """
@@ -152,18 +160,23 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
         self.decoder = self.PatchDecoder(patch_size, latent_dim, bottleneck)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """
-        Return the reconstructed image and a dictionary of additional loss terms you would like to
-        minimize (or even just visualize).
-        You can return an empty dictionary if you don't have any additional terms.
-        """
         encoded = self.encode(x)
-        target_size = x.shape[-3:-1]  # ✅ Dynamically extract (H, W)
-        reconstructed = self.decode(encoded, target_size=target_size)  # ✅ No hardcoded size
+        target_size = x.shape[1:3]  # ✅ Extract (H, W) from input image
+        reconstructed = self.decode(encoded, target_size)  # ✅ Ensures correct target_size
         return reconstructed, {}
+
+
+
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         return self.encoder(x)
 
-    def decode(self, x: torch.Tensor, target_size: tuple) -> torch.Tensor:
+    def decode(self, x: torch.Tensor, target_size: tuple = None) -> torch.Tensor:
+        if target_size is None:
+            # ✅ Dynamically infer target size using self.encoder output shape
+            h, w = x.shape[1:3]  # Extract spatial dimensions from encoded tensor
+            target_size = (h * self.encoder.patchify.patch_conv.kernel_size[0],  
+                          w * self.encoder.patchify.patch_conv.kernel_size[1])  # Scale to match original size
+
         return self.decoder(x, target_size)
+
