@@ -220,10 +220,10 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
 
 
     def decode_index(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Decode a set of discrete integer tokens into an image.
-        """
-        return self.decode(self.bsq.decode_index(x))
+        # Convert indices → BSQ codes without decoding
+        codes = self.bsq._index_to_code(x)  # ✅ Direct code conversion
+        return self.decode(codes)  # ✅ Proper single decoding pass
+
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """
