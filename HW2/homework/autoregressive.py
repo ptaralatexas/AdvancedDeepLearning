@@ -1,55 +1,87 @@
-import abc
-
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-
-class Autoregressive(abc.ABC):
+class AutoregressiveModel(nn.Module):
     """
-    Base class for all autoregressive models.
-    Implement a specific model below.
-    """
-
-    @abc.abstractmethod
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """
-        Take a tensor x (B, h, w) if integers as input.
-        Produce a probability over the next token as an output (B, h, w, n_token).
-        Make sure the model is auto-regressive:
-          - The first output result[:, 0, 0] does not depend on any input
-          - The second output result[:, 0, 1] depends only on x[:, 0, 0]
-          - etc.
-
-        Hint 1: Flatten the tensor into a sequence.
-        Hint 2: A positional embedding can help, but is not required.
-        Hint 3: You need to shift the input sequence by 1 position. Do this after embedding the
-                values, and before passing them through your model. (torch.concat or
-                torch.nn.ConstantPad1d both work)
-        """
-
-    def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:  # noqa
-        """
-        Use your generative model to produce B new token images of size (B, h, w) and type (int/long).
-        """
-
-
-class AutoregressiveModel(torch.nn.Module):
-    """
-    Implement an auto-regressive model.
-    The input is a set of patch tokens (integers), the output is an image of probability.
-    You need to implicitly shift your inputs by one position in the forward pass.
-    Make sure n_tokens matches your BSQ dimension (2**codebook_bits_).
-
-    Hint: You will need the torch.nn.Embedding function
-    Hint: You can use torch.nn.TransformerEncoderLayer if you'd like
-    Hint: You can complete this homework without using positional embeddings
+    An autoregressive model for sequence-based image generation.
     """
 
-    def __init__(self, d_latent: int = 128, n_tokens: int = 2**10):
+    def __init__(self, d_latent: int = 128, n_tokens: int = 2**10, n_layers: int = 6, n_heads: int = 8):
+        """
+        Args:
+            d_latent (int): Embedding dimension for token representation.
+            n_tokens (int): Number of unique tokens.
+            n_layers (int): Number of Transformer encoder layers.
+            n_heads (int): Number of attention heads.
+        """
         super().__init__()
-        raise NotImplementedError()
+        self.n_tokens = n_tokens
+        self.d_latent = d_latent
+
+        # Token embedding layer
+        self.embedding = nn.Embedding(n_tokens, d_latent)
+
+        # Transformer layers
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_latent, nhead=n_heads, dim_feedforward=4 * d_latent)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+
+        # Output head: maps latent representation to token probabilities
+        self.output_head = nn.Linear(d_latent, n_tokens)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        raise NotImplementedError()
+        """
+        Args:
+            x (torch.Tensor): Input tensor of shape (B, h, w).
 
-    def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:  # noqa
-        raise NotImplementedError()
+        Returns:
+            tuple: (logits of shape (B, h, w, n_tokens), auxiliary dictionary)
+        """
+        B, h, w = x.shape
+        x = x.view(B, -1)  # Flatten to (B, h*w)
+
+        # Embedding
+        x = self.embedding(x)  # Shape: (B, h*w, d_latent)
+
+        # Shift sequence by one (prepend a zero token)
+        x_shifted = torch.cat([torch.zeros((B, 1, self.d_latent), device=x.device), x[:, :-1, :]], dim=1)
+
+        # Pass through Transformer
+        x_encoded = self.transformer(x_shifted)  # Shape: (B, h*w, d_latent)
+
+        # Decode output
+        logits = self.output_head(x_encoded)  # Shape: (B, h*w, n_tokens)
+
+        # Reshape to (B, h, w, n_tokens)
+        logits = logits.view(B, h, w, self.n_tokens)
+
+        return logits, {}
+
+    def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:
+        """
+        Generates an image token-by-token using autoregressive inference.
+
+        Args:
+            B (int): Batch size.
+            h (int): Height of the image.
+            w (int): Width of the image.
+            device (torch.device): Device for computation.
+
+        Returns:
+            torch.Tensor: Generated tensor of shape (B, h, w).
+        """
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.eval()
+        with torch.no_grad():
+            generated = torch.zeros((B, h, w), dtype=torch.long, device=device)
+
+            for i in range(h):
+                for j in range(w):
+                    logits, _ = self.forward(generated)
+                    probs = F.softmax(logits[:, i, j, :], dim=-1)  # Get probability distribution
+                    next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)  # Sample from distribution
+                    generated[:, i, j] = next_token  # Assign sampled token
+
+        return generated
