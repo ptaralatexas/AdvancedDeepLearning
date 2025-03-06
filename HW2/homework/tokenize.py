@@ -6,7 +6,7 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-from .bsq import Tokenizer
+from .bsq import Tokenizer, BSQPatchAutoEncoder
 
 
 def tokenize(tokenizer: Path, output: Path, *images_or_dirs: Path):
@@ -21,7 +21,10 @@ def tokenize(tokenizer: Path, output: Path, *images_or_dirs: Path):
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    tk_model = cast(Tokenizer, torch.load(tokenizer, weights_only=False).to(device))
+    tk_model = Tokenizer()  # Instantiate the model
+    tk_model.load_state_dict(torch.load(tokenizer))  # Load the state_dict
+    tk_model.to(device)  # Move to device
+    tk_model.eval()  # Set to evaluation mode if necessary
 
     # Expand directories to individual image paths
     image_paths = []

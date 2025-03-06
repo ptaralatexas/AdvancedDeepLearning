@@ -39,19 +39,33 @@ class AutoregressiveModel(nn.Module):
         self.d_latent = d_latent
         
         self.embedding = nn.Embedding(n_tokens, d_latent)
-        self.transformer_layer = nn.TransformerEncoderLayer(d_model=d_latent, nhead=8)
+        self.transformer_layer = nn.TransformerEncoderLayer(d_model=d_latent, nhead=8, batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(self.transformer_layer, num_layers=6)
         self.fc_out = nn.Linear(d_latent, n_tokens)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        B, h, w = x.shape
+        print(f"DEBUG: Input shape to forward(): {x.shape}")  # 🔍 Debugging
+
+        if x.dim() == 4:  # If x has 4 dimensions (B, H, W, C), remove the channel dimension
+            x = x.mean(dim=-1)  # Convert (B, H, W, C) → (B, H, W) by averaging channels
+            print(f"DEBUG: Reshaped x to {x.shape}")  # 🔍 Debugging
+
+        if x.dim() != 3:  # Ensure we now have (B, H, W)
+            raise ValueError(f"Unexpected input shape {x.shape}, expected (B, H, W)")
+
+        B, h, w = x.shape  # ✅ Now safe to unpack
+
         x = x.view(B, -1)  # Flatten into sequence
-        x = self.embedding(x)  # Embed tokens
+        x = self.embedding(x)  # Convert tokens to embeddings
         x = torch.cat([torch.zeros(B, 1, self.d_latent, device=x.device), x[:, :-1, :]], dim=1)  # Shift by 1
-        x = self.transformer_encoder(x)  # Transformer processing
-        x = self.fc_out(x)  # Output probabilities
-        x = x.view(B, h, w, self.n_tokens)  # Reshape back
+        x = self.transformer_encoder(x)  # Process through transformer
+        x = self.fc_out(x)  # Compute output logits
+
+        x = x.view(B, h, w, self.n_tokens)  # Reshape back to spatial dimensions
         return x, {}
+
+
+
 
     def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:
         device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")

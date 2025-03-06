@@ -81,7 +81,7 @@ class BSQ(torch.nn.Module):
         """
         B, H, W, C = x.shape
         print(f"Before reshaping: {x.shape}")  # Debugging
-        x = x.permute(0, 2, 3, 1).contiguous().reshape(B, H * W, C)  # ✅ Correct reshaping
+        x = x.view(B, H * W, C)  # ✅ Ensure (B, HW, 128) before projection
         print(f"After reshaping: {x.shape}")  # Debugging
 
         if x.shape[-1] != self.embedding_dim:  # 🚀 Check before projection
@@ -197,24 +197,21 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
         """
         Convert an image into discrete integer tokens.
         """
-        print(f"Inside encode_index, input shape: {x.shape}")  # Debugging
-
-        if x.shape[1] == 3:  # Check channel dimension, not last dim
-            print("Processing raw image with 3 channels...")
-            x = self.encode(x)  # Encode image
+        if x.shape[-1] == 3:  # Raw image
+            # Process through full encoder to get quantized codes
+            x = self.encode(x)  # (B, H, W, 10)
             return self.bsq._code_to_index(x)
         
-        if x.shape[1] == 128:  # Embedding
-            print("Processing encoded embedding...")
+        if x.shape[-1] == 128:  # Embedding
+            # Quantize embeddings then convert to indices
             x = self.bsq.encode(x)
             return self.bsq._code_to_index(x)
         
-        if x.shape[1] == 10:  # Already BSQ encoded
-            print("Processing pre-quantized input...")
+        if x.shape[-1] == 10:  # Pre-quantized
+            # Directly convert to indices
             return self.bsq._code_to_index(x)
         
-        raise ValueError(f"Unexpected input channels: {x.shape[1]}")
-
+        raise ValueError(f"Unexpected input channels: {x.shape[-1]}")
 
 
 
