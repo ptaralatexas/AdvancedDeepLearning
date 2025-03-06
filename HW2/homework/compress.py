@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from homework.autoregressive import Autoregressive
+from .autoregressive import Autoregressive
 from .bsq import Tokenizer
 
 
