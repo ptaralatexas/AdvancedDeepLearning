@@ -1,31 +1,29 @@
 from pathlib import Path
-from typing import cast
-
 import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
-
-from .bsq import Tokenizer, BSQPatchAutoEncoder
-
+from .bsq import BSQPatchAutoEncoder
 
 def tokenize(tokenizer: Path, output: Path, *images_or_dirs: Path):
     """
     Tokenize images using a pre-trained model.
-
+    
     tokenizer: Path to the tokenizer model.
     output: Path to save the tokenize image tensor.
-    images: Path to the image / images to compress.
+    images_or_dirs: Path to the image(s) or directories to compress.
     """
-
+    
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    tk_model = Tokenizer()  # Instantiate the model
+    
+    # Create a BSQPatchAutoEncoder instance (not the abstract Tokenizer)
+    tk_model = BSQPatchAutoEncoder()  # Instantiate the concrete model
     tk_model.load_state_dict(torch.load(tokenizer))  # Load the state_dict
     tk_model.to(device)  # Move to device
-    tk_model.eval()  # Set to evaluation mode if necessary
-
+    tk_model.eval()  # Set to evaluation mode
+    
     # Expand directories to individual image paths
     image_paths = []
     for path in images_or_dirs:
@@ -34,7 +32,7 @@ def tokenize(tokenizer: Path, output: Path, *images_or_dirs: Path):
             image_paths.extend(list(path.glob("*.jpg")))
         else:
             image_paths.append(path)
-
+    
     # Load and compress all images
     compressed_tensors = []
     for image_path in tqdm(image_paths):
@@ -44,7 +42,7 @@ def tokenize(tokenizer: Path, output: Path, *images_or_dirs: Path):
             x = x.float() / 255.0 - 0.5
             cmp_image = tk_model.encode_index(x)
             compressed_tensors.append(cmp_image.cpu())
-
+    
     # Store the tensor in the lowest number of bits possible
     compressed_tensor = torch.stack(compressed_tensors)
     # We rely on numpy here for uint support and faster loading (not that this really matters at this size)
@@ -55,11 +53,9 @@ def tokenize(tokenizer: Path, output: Path, *images_or_dirs: Path):
         np_compressed_tensor = np_compressed_tensor.astype(np.uint16)
     else:
         np_compressed_tensor = np_compressed_tensor.astype(np.uint32)
-
+    
     torch.save(np_compressed_tensor, output)
-
 
 if __name__ == "__main__":
     from fire import Fire
-
     Fire(tokenize)

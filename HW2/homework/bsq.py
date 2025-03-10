@@ -164,16 +164,15 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
         """
         if x.shape[-1] == 3:  # Raw image, needs full encoding
             print(f"BSQPatchAutoEncoder.encode() - Running PatchAutoEncoder on raw image {x.shape}")
+            
+            # Add batch dimension if missing and permute to channel-first format
+            if x.dim() == 3:  # [H, W, C]
+                x = x.unsqueeze(0)  # Add batch dimension [1, H, W, C]
+            
+            # Convert from [B, H, W, C] to [B, C, H, W] (PyTorch expects channel-first)
+            x = x.permute(0, 3, 1, 2)
+            
             x = super().encode(x)  # Get encoded representation (B, H, W, 128)
-
-        elif x.shape[-1] == 128:  # Already an embedding, apply BSQ encoding
-            print(f"BSQPatchAutoEncoder.encode() - Running BSQ encoding on embedding {x.shape}")
-
-        elif x.shape[-1] == 10:  # Already BSQ-encoded, return as is
-            print(f"BSQPatchAutoEncoder.encode() - Input already BSQ-encoded {x.shape}, skipping encoding")
-            return x
-
-        return self.bsq.encode(x)  # Apply BSQ encoding (B, H, W, 10)
 
 
 
