@@ -165,14 +165,19 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
         if x.shape[-1] == 3:  # Raw image, needs full encoding
             print(f"BSQPatchAutoEncoder.encode() - Running PatchAutoEncoder on raw image {x.shape}")
             
-            # Just add batch dimension without changing the order of dimensions
+            # Add batch dimension if necessary
             if x.dim() == 3:  # [H, W, C]
-                x = x.unsqueeze(0)  # Add batch dimension [1, H, W, C]
+                x = x.unsqueeze(0)  # [1, H, W, C]
                 
-            print(f"After adding batch dim: {x.shape}")  # Debug print
-            x = super().encode(x)  # Get encoded representation
+            print(f"After adding batch dim: {x.shape}")
+            latent = super().encode(x)  # Get latent representation, expected shape: [B, H, W, 128]
             
-            return x
+            # Apply BSQ quantization to convert embeddings (128) to quantized codes (10)
+            quantized = self.bsq.encode(latent)  # Now shape: [B, H, W, 10]
+            return quantized
+        
+        # Optionally, handle other cases if needed...
+
         
 
 
