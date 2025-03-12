@@ -19,7 +19,7 @@ ar_models = {
 }
 
 
-def train(model_name_or_path: str, epochs: int = 5, batch_size: int = 64):
+def train(model_name_or_path: str, epochs: int = 5, batch_size: int = 4):
     import lightning as L
     from lightning.pytorch.loggers import TensorBoardLogger
 
@@ -104,11 +104,11 @@ def train(model_name_or_path: str, epochs: int = 5, batch_size: int = 64):
 
         def train_dataloader(self):
             dataset = TokenDataset("train")
-            return torch.utils.data.DataLoader(dataset, batch_size=batch_size, num_workers=4, shuffle=True)
+            return torch.utils.data.DataLoader(dataset, batch_size=4, num_workers=4, shuffle=True)
 
         def val_dataloader(self):
             dataset = TokenDataset("valid")
-            return torch.utils.data.DataLoader(dataset, batch_size=batch_size, num_workers=4, shuffle=True)
+            return torch.utils.data.DataLoader(dataset, batch_size=4, num_workers=4, shuffle=True)
 
     class CheckPointer(L.Callback):
         def on_train_epoch_end(self, trainer, pl_module):
