@@ -2,8 +2,10 @@ import inspect
 import math
 from datetime import datetime
 from pathlib import Path
-
+import abc
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from . import ae, autoregressive, bsq
 
@@ -98,6 +100,17 @@ def train(model_name_or_path: str, epochs: int = 5, batch_size: int = 4):
             for k, v in additional_losses.items():
                 self.log(f"validation/{k}", v)
             return loss
+
+        def configure_optimizers(self):
+            return torch.optim.AdamW(self.parameters(), lr=1e-3)
+
+        def train_dataloader(self):
+            dataset = TokenDataset("train")
+            return torch.utils.data.DataLoader(dataset, batch_size=batch_size, num_workers=4, shuffle=True)
+
+        def val_dataloader(self):
+            dataset = TokenDataset("valid")
+            return torch.utils.data.DataLoader(dataset, batch_size=batch_size, num_workers=4, shuffle=True)
 
         def configure_optimizers(self):
             return torch.optim.AdamW(self.parameters(), lr=1e-3)
