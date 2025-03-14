@@ -9,26 +9,31 @@ from .ae import PatchAutoEncoder
 
 
 def load() -> torch.nn.Module:
-    """
-    Load the saved BSQPatchAutoEncoder model.
-    """
+    from pathlib import Path
+
     model_name = "BSQPatchAutoEncoder"
     model_path = Path(__file__).parent / f"{model_name}.pth"
     print(f"Loading {model_name} from {model_path}")
+    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"))
 
-    # Initialize model with default hyperparameters
-    model = BSQPatchAutoEncoder()
-
-    # Load state_dict safely
-    state_dict = torch.load(model_path, map_location=torch.device("cpu"))
-
-    if not isinstance(state_dict, dict):  # Ensure state_dict is valid
+    # Decide how to handle the loaded object
+    if isinstance(loaded_obj, torch.nn.Module):
+        # If it’s already a full model, extract the state dict
+        print("Loaded a full BSQPatchAutoEncoder model, extracting state_dict...")
+        state_dict = loaded_obj.state_dict()
+    elif isinstance(loaded_obj, dict):
+        # If it’s just a dict, assume it’s already a state_dict
+        print("Loaded a state_dict...")
+        state_dict = loaded_obj
+    else:
         raise TypeError(
-            f"Expected state_dict to be dict-like, but got {type(state_dict)}. "
-            f"Try re-saving the model using `torch.save(model.state_dict(), 'BSQPatchAutoEncoder.pth')`."
+            f"The file {model_path} must contain either a nn.Module or a "
+            f"state_dict, but got type {type(loaded_obj)}."
         )
 
-    model.load_state_dict(state_dict)  # Load weights
+    # Now initialize a fresh model and load the state_dict
+    model = BSQPatchAutoEncoder()
+    model.load_state_dict(state_dict)
     return model
 
 

@@ -5,22 +5,34 @@ import torch.nn.functional as F
 
 def load() -> torch.nn.Module:
     """
-    Load the saved PatchAutoEncoder model.
+    Load the PatchAutoEncoder model from PatchAutoEncoder.pth,
+    handling both "full model" and "state_dict" formats.
     """
     model_name = "PatchAutoEncoder"
+    # Build the path relative to this script’s directory:
     model_path = Path(__file__).parent / f"{model_name}.pth"
     print(f"Loading {model_name} from {model_path}")
 
-    model = PatchAutoEncoder()  # ✅ Initialize model first
-    state_dict = torch.load(model_path, map_location=torch.device("cpu"))  # ✅ Load state_dict only
+    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"))
 
-    if not isinstance(state_dict, dict):  # ✅ Ensure we're loading a state_dict
+    # Check if we've loaded a full model or a raw state_dict
+    if isinstance(loaded_obj, torch.nn.Module):
+        # “Full model” case: extract its state_dict
+        print("Loaded a full model. Extracting state_dict...")
+        state_dict = loaded_obj.state_dict()
+    elif isinstance(loaded_obj, dict):
+        # “state_dict” case: load it directly
+        print("Loaded a state_dict directly...")
+        state_dict = loaded_obj
+    else:
         raise TypeError(
-            f"Expected state_dict to be dict-like, but got {type(state_dict)}. "
-            f"Try re-saving the model using `torch.save(model.state_dict(), 'PatchAutoEncoder.pth')`."
+            f"The file {model_path} must contain a nn.Module or a state_dict, "
+            f"but got type {type(loaded_obj)} instead."
         )
 
-    model.load_state_dict(state_dict)  # ✅ Correctly load state_dict
+    # Now create a fresh PatchAutoEncoder and load the state_dict into it
+    model = PatchAutoEncoder()
+    model.load_state_dict(state_dict)
     return model
 
 
