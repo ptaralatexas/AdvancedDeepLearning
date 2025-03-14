@@ -170,7 +170,7 @@ def train(model_name_or_path: str, epochs: int = 5, batch_size: int = 4):
                     F.cross_entropy(
                         x_hat.view(-1, x_hat.shape[-1]), 
                         x.view(-1),
-                        reduction="sum"
+                        reduction="mean"
                     )
                     / math.log(2) 
                     / x.shape[0]
@@ -181,7 +181,7 @@ def train(model_name_or_path: str, epochs: int = 5, batch_size: int = 4):
             return ce_loss
 
         def configure_optimizers(self):
-            return torch.optim.AdamW(self.parameters(), lr=1e-3)
+            return torch.optim.AdamW(self.parameters(), lr=1e-4)
 
         def train_dataloader(self):
             dataset = TokenDataset("train")
