@@ -72,10 +72,10 @@ class BSQ(torch.nn.Module):
         self.codebook_bits = codebook_bits
         self.embedding_dim = embedding_dim
 
-        # ✅ Project from embedding_dim (128) to codebook_bits (10)
+        #Project from embedding_dim (128) to codebook_bits (10)
         self.linear_proj = torch.nn.Linear(self.embedding_dim, self.codebook_bits)
 
-        # ✅ Project back from codebook_bits (10) to embedding_dim (128)
+        #Project back from codebook_bits (10) to embedding_dim (128)
         self.linear_recon = torch.nn.Linear(self.codebook_bits, self.embedding_dim)
 
 
@@ -86,13 +86,13 @@ class BSQ(torch.nn.Module):
         """
         B, H, W, C = x.shape
         #print(f"Before reshaping: {x.shape}")  # Debugging
-        x = x.view(B, H * W, C)  # ✅ Ensure (B, HW, 128) before projection
+        x = x.view(B, H * W, C)  #Ensure (B, HW, 128) before projection
         #print(f"After reshaping: {x.shape}")  # Debugging
 
         if x.shape[-1] != self.embedding_dim:  # 🚀 Check before projection
             raise ValueError(f"Expected last dimension {self.embedding_dim}, but got {x.shape[-1]}")
 
-        x = self.linear_proj(x)  # ✅ Linear projection (B, HW, 10)
+        x = self.linear_proj(x)  #Linear projection (B, HW, 10)
         #print(f"After projection: {x.shape}")  # Debugging
 
         x = F.normalize(x, p=2, dim=-1)  # L2 Normalization
@@ -110,16 +110,16 @@ class BSQ(torch.nn.Module):
         """
         #print(f"Decoding - Input shape: {x.shape}")  # Debugging print
 
-        if x.dim() == 4:  # ✅ If already (B, H, W, C), no need to reshape
+        if x.dim() == 4:  #If already (B, H, W, C), no need to reshape
             B, H, W, C = x.shape  
-        elif x.dim() == 3:  # ✅ If flattened (B, HW, C), infer H & W
+        elif x.dim() == 3:  #If flattened (B, HW, C), infer H & W
             B, HW, C = x.shape
             H, W = int(math.sqrt(HW)), HW // int(math.sqrt(HW))  # Dynamically determine H & W
-            x = x.view(B, H, W, C)  # ✅ Reshape from (B, HW, C) → (B, H, W, C)
+            x = x.view(B, H, W, C)  #Reshape from (B, HW, C) → (B, H, W, C)
 
         #print(f"Decoding - After reshape: {x.shape}")  # Debugging print
 
-        x = self.linear_recon(x)  # ✅ Map from 10 back to 128 channels
+        x = self.linear_recon(x)  #Map from 10 back to 128 channels
         #print(f"Decoding - After projection: {x.shape}")  # Debugging print
 
         return x  # Correctly return reshaped tensor
@@ -230,8 +230,8 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
 
     def decode_index(self, x: torch.Tensor) -> torch.Tensor:
         # Convert indices → BSQ codes without decoding
-        codes = self.bsq._index_to_code(x)  # ✅ Direct code conversion
-        return self.decode(codes)  # ✅ Proper single decoding pass
+        codes = self.bsq._index_to_code(x)  # Direct code conversion
+        return self.decode(codes)  #Proper single decoding pass
 
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:

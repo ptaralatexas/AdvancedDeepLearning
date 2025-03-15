@@ -153,11 +153,11 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
             x = chw_to_hwc(x)  # Convert back to (B, h, w, latent_dim)
             x = self.unpatchify(x)  # (B, H, W, 3)
 
-            # ✅ Ensure target_size is correctly formatted (H, W)
+            #Ensure target_size is correctly formatted (H, W)
             if not isinstance(target_size, tuple) or len(target_size) != 2:
                 raise ValueError(f"Invalid target_size: {target_size}. Expected (H, W).")
 
-            # ✅ Apply resizing correctly
+            #Apply resizing correctly
             x = F.interpolate(x.permute(0, 3, 1, 2), size=(target_size[0], target_size[1]), mode="bilinear", align_corners=False)
             x = x.permute(0, 2, 3, 1)  # Convert back to (B, H, W, C)
             return x
@@ -173,8 +173,8 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         encoded = self.encode(x)
-        target_size = x.shape[1:3]  # ✅ Extract (H, W) from input image
-        reconstructed = self.decode(encoded, target_size)  # ✅ Ensures correct target_size
+        target_size = x.shape[1:3]  #Extract (H, W) from input image
+        reconstructed = self.decode(encoded, target_size)  #Ensures correct target_size
         return reconstructed, {}
 
 
@@ -185,7 +185,7 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
 
     def decode(self, x: torch.Tensor, target_size: tuple = None) -> torch.Tensor:
         if target_size is None:
-            # ✅ Dynamically infer target size using self.encoder output shape
+            #Dynamically infer target size using self.encoder output shape
             h, w = x.shape[1:3]  # Extract spatial dimensions from encoded tensor
             target_size = (h * self.encoder.patchify.patch_conv.kernel_size[0],  
                           w * self.encoder.patchify.patch_conv.kernel_size[1])  # Scale to match original size

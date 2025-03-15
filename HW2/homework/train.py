@@ -233,9 +233,7 @@ def train(model_name_or_path: str, epochs: int = 5, batch_size: int = 4):
     trainer = L.Trainer(
         max_epochs=epochs,
         logger=logger,
-        callbacks=[CheckPointer()],
-        # You can add accelerator="gpu" if you want:
-        # accelerator="gpu",
+        callbacks=[CheckPointer()]
     )
 
     # -------------------------------------------------------------------------
