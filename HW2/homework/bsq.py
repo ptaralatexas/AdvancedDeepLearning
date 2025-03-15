@@ -85,19 +85,19 @@ class BSQ(torch.nn.Module):
         Implement the BSQ encoder with additional debugging prints.
         """
         B, H, W, C = x.shape
-        print(f"Before reshaping: {x.shape}")  # Debugging
+        #print(f"Before reshaping: {x.shape}")  # Debugging
         x = x.view(B, H * W, C)  # ✅ Ensure (B, HW, 128) before projection
-        print(f"After reshaping: {x.shape}")  # Debugging
+        #print(f"After reshaping: {x.shape}")  # Debugging
 
         if x.shape[-1] != self.embedding_dim:  # 🚀 Check before projection
             raise ValueError(f"Expected last dimension {self.embedding_dim}, but got {x.shape[-1]}")
 
         x = self.linear_proj(x)  # ✅ Linear projection (B, HW, 10)
-        print(f"After projection: {x.shape}")  # Debugging
+        #print(f"After projection: {x.shape}")  # Debugging
 
         x = F.normalize(x, p=2, dim=-1)  # L2 Normalization
         x = diff_sign(x)  # Differentiable sign function
-        print(f"Final shape before returning: {x.shape}")  # Debugging
+        #print(f"Final shape before returning: {x.shape}")  # Debugging
 
         return x.view(B, H, W, self.codebook_bits)  # ✅ Reshape correctly
 
@@ -108,7 +108,7 @@ class BSQ(torch.nn.Module):
         """
         Decode a BSQ-encoded representation back into an image.
         """
-        print(f"Decoding - Input shape: {x.shape}")  # Debugging print
+        #print(f"Decoding - Input shape: {x.shape}")  # Debugging print
 
         if x.dim() == 4:  # ✅ If already (B, H, W, C), no need to reshape
             B, H, W, C = x.shape  
@@ -117,10 +117,10 @@ class BSQ(torch.nn.Module):
             H, W = int(math.sqrt(HW)), HW // int(math.sqrt(HW))  # Dynamically determine H & W
             x = x.view(B, H, W, C)  # ✅ Reshape from (B, HW, C) → (B, H, W, C)
 
-        print(f"Decoding - After reshape: {x.shape}")  # Debugging print
+        #print(f"Decoding - After reshape: {x.shape}")  # Debugging print
 
         x = self.linear_recon(x)  # ✅ Map from 10 back to 128 channels
-        print(f"Decoding - After projection: {x.shape}")  # Debugging print
+        #print(f"Decoding - After projection: {x.shape}")  # Debugging print
 
         return x  # Correctly return reshaped tensor
 
@@ -168,7 +168,7 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
         Encode an input image `x` using the autoencoder and then apply BSQ quantization.
         """
         if x.shape[-1] == 3:  # Raw image, needs full encoding
-            print(f"BSQPatchAutoEncoder.encode() - Running PatchAutoEncoder on raw image {x.shape}")
+            #print(f"BSQPatchAutoEncoder.encode() - Running PatchAutoEncoder on raw image {x.shape}")
             
             # Add batch dimension if necessary
             if x.dim() == 3:  # [H, W, C]
@@ -193,7 +193,7 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
         Decode a BSQ-encoded representation back into an image.
         """
         x = self.bsq.decode(x)  # ✅ Ensure BSQ decoding is handled correctly
-        print(f"BSQPatchAutoEncoder.decode() - After BSQ decode: {x.shape}")  # Debugging
+        #print(f"BSQPatchAutoEncoder.decode() - After BSQ decode: {x.shape}")  # Debugging
 
         return super().decode(x)  # ✅ Call PatchAutoEncoder's decode()
 

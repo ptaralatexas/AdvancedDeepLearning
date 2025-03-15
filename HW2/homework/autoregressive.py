@@ -89,7 +89,7 @@ class AutoregressiveModel(nn.Module, Autoregressive):
             "target_tokens_mean": a scalar for logging,
             "original_input_mean": a scalar for logging/debug.
         """
-        print(f"DEBUG: Input shape to forward(): {x.shape}")
+        #print(f"DEBUG: Input shape to forward(): {x.shape}")
 
         # For logging/debug
         original_input = x
