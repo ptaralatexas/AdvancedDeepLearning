@@ -14,7 +14,7 @@ def load() -> torch.nn.Module:
     model_name = "BSQPatchAutoEncoder"
     model_path = Path(__file__).parent / f"{model_name}.pth"
     print(f"Loading {model_name} from {model_path}")
-    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"))
+    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"), weights_only= False)
 
     # Decide how to handle the loaded object
     if isinstance(loaded_obj, torch.nn.Module):

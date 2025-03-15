@@ -14,7 +14,7 @@ def load() -> nn.Module:
     model_path = Path(__file__).parent / f"{model_name}.pth"
     print(f"Loading {model_name} from {model_path}")
 
-    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"))
+    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"), weights_only=False)
 
     # Decide how to handle the loaded object
     if isinstance(loaded_obj, nn.Module):
@@ -100,12 +100,12 @@ class AutoregressiveModel(nn.Module, Autoregressive):
                 # Convert floats to discrete tokens by averaging channels (if you truly want that)
                 # Then cast to long
                 x = x.mean(dim=1).long()  # (B, H, W)
-                print(f"DEBUG: Tokenized x shape (from float): {x.shape}")
+                #print(f"DEBUG: Tokenized x shape (from float): {x.shape}")
             else:
                 # If it's already integer tokens but shape is (B, C, H, W),
                 # remove the channel dimension (assuming C=1 or that the first channel is the tokens)
                 x = x[:, 0, :, :]  # (B, H, W)
-                print(f"DEBUG: Reshaped integer input to: {x.shape}")
+                #print(f"DEBUG: Reshaped integer input to: {x.shape}")
 
         # Now x should be (B, H, W)
         if x.dim() != 3:
