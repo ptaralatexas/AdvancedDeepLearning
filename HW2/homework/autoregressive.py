@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from pathlib import Path
 
 
-def load() -> nn.Module:
+def load() -> torch.nn.Module:
     """
     Load AutoregressiveModel from AutoregressiveModel.pth,
     handling both a raw `state_dict` or a full model.
