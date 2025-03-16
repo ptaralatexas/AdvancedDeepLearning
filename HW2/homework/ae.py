@@ -6,34 +6,33 @@ import torch.nn.functional as F
 def load() -> torch.nn.Module:
     """
     Load the PatchAutoEncoder model from PatchAutoEncoder.pth,
-    handling both "full model" and "state_dict" formats.
+    handling both a raw `state_dict` or a full model.
     """
     model_name = "PatchAutoEncoder"
-    # Build the path relative to this script’s directory:
     model_path = Path(__file__).parent / f"{model_name}.pth"
     print(f"Loading {model_name} from {model_path}")
 
-    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"), weights_only= False)
+    loaded_obj = torch.load(model_path, weights_only=False)
 
-    # Check if we've loaded a full model or a raw state_dict
+    # Initialize a new model instance
+    model = PatchAutoEncoder()
+
+    # Handle different loading cases
     if isinstance(loaded_obj, torch.nn.Module):
-        # “Full model” case: extract its state_dict
-        print("Loaded a full model. Extracting state_dict...")
-        state_dict = loaded_obj.state_dict()
+        print("Loaded a full model, using it directly.")
+        model = loaded_obj  # ✅ Use the loaded model directly
     elif isinstance(loaded_obj, dict):
-        # “state_dict” case: load it directly
-        print("Loaded a state_dict directly...")
-        state_dict = loaded_obj
+        print("Loaded a state_dict, applying to a new model instance.")
+        model.load_state_dict(loaded_obj)  # ✅ Load state_dict into a fresh model
     else:
         raise TypeError(
-            f"The file {model_path} must contain a nn.Module or a state_dict, "
-            f"but got type {type(loaded_obj)} instead."
+            f"The file {model_path} must contain either a nn.Module or a "
+            f"state_dict, but got type {type(loaded_obj)}."
         )
 
-    # Now create a fresh PatchAutoEncoder and load the state_dict into it
-    model = PatchAutoEncoder()
-    model.load_state_dict(state_dict)
+    model.eval()  # ✅ Ensure the model is in evaluation mode
     return model
+
 
 
 def hwc_to_chw(x: torch.Tensor) -> torch.Tensor:

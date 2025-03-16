@@ -7,32 +7,34 @@ from pathlib import Path
 
 def load() -> torch.nn.Module:
     """
-    Load AutoregressiveModel from AutoregressiveModel.pth,
+    Load the PatchAutoEncoder model from PatchAutoEncoder.pth,
     handling both a raw `state_dict` or a full model.
     """
     model_name = "AutoregressiveModel"
     model_path = Path(__file__).parent / f"{model_name}.pth"
     print(f"Loading {model_name} from {model_path}")
 
-    loaded_obj = torch.load(model_path, map_location=torch.device("cpu"), weights_only=False)
+    loaded_obj = torch.load(model_path, weights_only=False)
 
-    # Decide how to handle the loaded object
-    if isinstance(loaded_obj, nn.Module):
-        print("Loaded a full AutoregressiveModel, extracting state_dict...")
-        state_dict = loaded_obj.state_dict()
+    # Initialize a new model instance
+    model = AutoregressiveModel()
+
+    # Handle different loading cases
+    if isinstance(loaded_obj, torch.nn.Module):
+        print("Loaded a full model, using it directly.")
+        model = loaded_obj  # ✅ Use the loaded model directly
     elif isinstance(loaded_obj, dict):
-        print("Loaded a state_dict...")
-        state_dict = loaded_obj
+        print("Loaded a state_dict, applying to a new model instance.")
+        model.load_state_dict(loaded_obj)  # ✅ Load state_dict into a fresh model
     else:
         raise TypeError(
             f"The file {model_path} must contain either a nn.Module or a "
             f"state_dict, but got type {type(loaded_obj)}."
         )
 
-    # Initialize a fresh AutoregressiveModel and load its state_dict
-    model = AutoregressiveModel()
-    model.load_state_dict(state_dict)
+    model.eval()  # ✅ Ensure the model is in evaluation mode
     return model
+
 
 class Autoregressive(abc.ABC):
     """
