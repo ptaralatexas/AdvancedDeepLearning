@@ -1,6 +1,39 @@
 import abc
-
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from pathlib import Path
+
+
+def load() -> torch.nn.Module:
+    """
+    Load the PatchAutoEncoder model from PatchAutoEncoder.pth,
+    handling both a raw `state_dict` or a full model.
+    """
+    model_name = "AutoregressiveModel"
+    model_path = Path(__file__).parent / f"{model_name}.pth"
+    print(f"Loading {model_name} from {model_path}")
+
+    loaded_obj = torch.load(model_path, weights_only=False)
+
+    # Initialize a new model instance
+    model = AutoregressiveModel()
+
+    # Handle different loading cases
+    if isinstance(loaded_obj, torch.nn.Module):
+        print("Loaded a full model, using it directly.")
+        model = loaded_obj  # ✅ Use the loaded model directly
+    elif isinstance(loaded_obj, dict):
+        print("Loaded a state_dict, applying to a new model instance.")
+        model.load_state_dict(loaded_obj)  # ✅ Load state_dict into a fresh model
+    else:
+        raise TypeError(
+            f"The file {model_path} must contain either a nn.Module or a "
+            f"state_dict, but got type {type(loaded_obj)}."
+        )
+
+    model.eval()  # ✅ Ensure the model is in evaluation mode
+    return model
 
 
 class Autoregressive(abc.ABC):
@@ -8,48 +41,134 @@ class Autoregressive(abc.ABC):
     Base class for all autoregressive models.
     Implement a specific model below.
     """
-
     @abc.abstractmethod
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """
-        Take a tensor x (B, h, w) if integers as input.
-        Produce a probability over the next token as an output (B, h, w, n_token).
-        Make sure the model is auto-regressive:
-          - The first output result[:, 0, 0] does not depend on any input
-          - The second output result[:, 0, 1] depends only on x[:, 0, 0]
-          - etc.
-
-        Hint 1: Flatten the tensor into a sequence.
-        Hint 2: A positional embedding can help, but is not required.
-        Hint 3: You need to shift the input sequence by 1 position. Do this after embedding the
-                values, and before passing them through your model. (torch.concat or
-                torch.nn.ConstantPad1d both work)
+        Take a tensor x (B, H, W) or (B, C, H, W) of integers as input.
+        Produce a probability over the next token as an output (B, H, W, n_tokens).
         """
 
-    def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:  # noqa
+    def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:
         """
-        Use your generative model to produce B new token images of size (B, h, w) and type (int/long).
+        Use your generative model to produce B new token images of size (B, h, w).
         """
 
 
-class AutoregressiveModel(torch.nn.Module):
+class AutoregressiveModel(nn.Module, Autoregressive):
     """
-    Implement an auto-regressive model.
-    The input is a set of patch tokens (integers), the output is an image of probability.
-    You need to implicitly shift your inputs by one position in the forward pass.
-    Make sure n_tokens matches your BSQ dimension (2**codebook_bits_).
-
-    Hint: You will need the torch.nn.Embedding function
-    Hint: You can use torch.nn.TransformerEncoderLayer if you'd like
-    Hint: You can complete this homework without using positional embeddings
+    An autoregressive model that predicts token logits of shape (B, H, W, n_tokens).
     """
 
     def __init__(self, d_latent: int = 128, n_tokens: int = 2**10):
         super().__init__()
-        raise NotImplementedError()
+        self.n_tokens = n_tokens
+        self.d_latent = d_latent
+
+        # Embed discrete tokens into a continuous latent space
+        self.embedding = nn.Embedding(n_tokens, d_latent)
+
+        # A Transformer-Encoder used as a "decoder" with a causal mask
+        self.transformer_layer = nn.TransformerEncoderLayer(
+            d_model=d_latent,
+            nhead=8,
+            batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(
+            self.transformer_layer,
+            num_layers=6
+        )
+
+        # Final projection from latent to token logits
+        self.fc_out = nn.Linear(d_latent, n_tokens)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        raise NotImplementedError()
+        """
+        x: (B, H, W) or (B, C, H, W).
+        Returns:
+          token_logits: (B, H, W, n_tokens)
+          info_dict: dict with:
+            "target_tokens": the ground-truth tokens,
+            "target_tokens_mean": a scalar for logging,
+            "original_input_mean": a scalar for logging/debug.
+        """
+        #print(f"DEBUG: Input shape to forward(): {x.shape}")
 
-    def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:  # noqa
-        raise NotImplementedError()
+        # For logging/debug
+        original_input = x
+
+        # If input has 4 dimensions, handle accordingly
+        if x.dim() == 4:  # (B, C, H, W)
+            if x.is_floating_point():
+                # Convert floats to discrete tokens by averaging channels (if you truly want that)
+                # Then cast to long
+                x = x.mean(dim=1).long()  # (B, H, W)
+                #print(f"DEBUG: Tokenized x shape (from float): {x.shape}")
+            else:
+                # If it's already integer tokens but shape is (B, C, H, W),
+                # remove the channel dimension (assuming C=1 or that the first channel is the tokens)
+                x = x[:, 0, :, :]  # (B, H, W)
+                #print(f"DEBUG: Reshaped integer input to: {x.shape}")
+
+        # Now x should be (B, H, W)
+        if x.dim() != 3:
+            raise ValueError(f"Unexpected input shape {x.shape}, expected (B, H, W)")
+
+        B, H, W = x.shape
+
+        # Ground truth tokens for cross-entropy
+        target_tokens = x.clone()
+
+        # Flatten the 2D tokens into a single sequence
+        x = x.view(B, -1)         # (B, H*W)
+        x = self.embedding(x)     # (B, H*W, d_latent)
+
+        # Shift the sequence right for next-token prediction
+        x = torch.cat([
+            torch.zeros(B, 1, self.d_latent, device=x.device, dtype=x.dtype),
+            x[:, :-1, :]
+        ], dim=1)                 # still (B, H*W, d_latent)
+
+        # Create a causal mask so each position sees itself and previous tokens only
+        seq_len = x.size(1)
+        causal_mask = torch.triu(
+            torch.full((seq_len, seq_len), float('-inf'), device=x.device),
+            diagonal=1
+        )
+
+        # Pass through the Transformer
+        x = self.transformer_encoder(x, mask=causal_mask)  # (B, H*W, d_latent)
+
+        # Project to token logits
+        x = self.fc_out(x)  # (B, H*W, n_tokens)
+        token_logits = x.view(B, H, W, self.n_tokens)
+
+        # Prepare info dictionary
+        info_dict = {
+            "target_tokens": target_tokens,   # shape (B, H, W)
+            "target_tokens_mean": target_tokens.float().mean(),
+            "original_input_mean": original_input.float().mean()
+        }
+
+        return token_logits, info_dict
+
+    def generate(self, B: int = 1, H: int = 30, W: int = 20, device=None) -> torch.Tensor:
+        """
+        Generate a grid of tokens (B, H, W) in an autoregressive manner.
+        """
+        device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.eval()
+
+        # Initialize output tokens to 0
+        output = torch.zeros((B, H, W), dtype=torch.long, device=device)
+
+        with torch.no_grad():
+            for i in range(H):
+                for j in range(W):
+                    # Get token logits for the grid so far
+                    token_logits, _ = self.forward(output)
+                    # Distribution for position (i, j)
+                    probs = F.softmax(token_logits[:, i, j, :], dim=-1)
+                    # Sample from this distribution
+                    output[:, i, j] = torch.multinomial(probs, num_samples=1).squeeze(-1)
+
+        return output

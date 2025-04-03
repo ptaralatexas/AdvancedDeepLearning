@@ -1,8 +1,43 @@
 import abc
-
 import torch
+import torch.nn.functional as F
+from pathlib import Path
+import math
 
 from .ae import PatchAutoEncoder
+
+
+
+def load() -> torch.nn.Module:
+    """
+    Load the BSQPatchAutoEncoder model from BSQPatchAutoEncoder.pth,
+    handling both a raw `state_dict` or a full model.
+    """
+    model_name = "BSQPatchAutoEncoder"
+    model_path = Path(__file__).parent / f"{model_name}.pth"
+    print(f"Loading {model_name} from {model_path}")
+
+    loaded_obj = torch.load(model_path, weights_only=False)
+
+    # Initialize a new model instance
+    model = BSQPatchAutoEncoder()
+
+    # Handle different loading cases
+    if isinstance(loaded_obj, torch.nn.Module):
+        print("Loaded a full model, using it directly.")
+        model = loaded_obj  # ✅ Use the loaded model directly
+    elif isinstance(loaded_obj, dict):
+        print("Loaded a state_dict, applying to a new model instance.")
+        model.load_state_dict(loaded_obj)  # ✅ Load state_dict into a fresh model
+    else:
+        raise TypeError(
+            f"The file {model_path} must contain either a nn.Module or a "
+            f"state_dict, but got type {type(loaded_obj)}."
+        )
+
+    model.eval()  # ✅ Ensure the model is in evaluation mode
+    return model
+
 
 
 def diff_sign(x: torch.Tensor) -> torch.Tensor:
@@ -37,36 +72,74 @@ class Tokenizer(abc.ABC):
 class BSQ(torch.nn.Module):
     def __init__(self, codebook_bits: int, embedding_dim: int):
         super().__init__()
-        raise NotImplementedError()
+        self.codebook_bits = codebook_bits
+        self.embedding_dim = embedding_dim
+
+        #Project from embedding_dim (128) to codebook_bits (10)
+        self.linear_proj = torch.nn.Linear(self.embedding_dim, self.codebook_bits)
+
+        #Project back from codebook_bits (10) to embedding_dim (128)
+        self.linear_recon = torch.nn.Linear(self.codebook_bits, self.embedding_dim)
+
+
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Implement the BSQ encoder:
-        - A linear down-projection into codebook_bits dimensions
-        - L2 normalization
-        - differentiable sign
+        Implement the BSQ encoder with additional debugging prints.
         """
-        raise NotImplementedError()
+        B, H, W, C = x.shape
+        #print(f"Before reshaping: {x.shape}")  # Debugging
+        x = x.view(B, H * W, C)  #Ensure (B, HW, 128) before projection
+        #print(f"After reshaping: {x.shape}")  # Debugging
+
+        if x.shape[-1] != self.embedding_dim:  # 🚀 Check before projection
+            raise ValueError(f"Expected last dimension {self.embedding_dim}, but got {x.shape[-1]}")
+
+        x = self.linear_proj(x)  #Linear projection (B, HW, 10)
+        #print(f"After projection: {x.shape}")  # Debugging
+
+        x = F.normalize(x, p=2, dim=-1)  # L2 Normalization
+        x = diff_sign(x)  # Differentiable sign function
+        #print(f"Final shape before returning: {x.shape}")  # Debugging
+
+        return x.view(B, H, W, self.codebook_bits)  # ✅ Reshape correctly
+
+
+
 
     def decode(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Implement the BSQ decoder:
-        - A linear up-projection into embedding_dim should suffice
+        Decode a BSQ-encoded representation back into an image.
         """
-        raise NotImplementedError()
+        #print(f"Decoding - Input shape: {x.shape}")  # Debugging print
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.decode(self.encode(x))
+        if x.dim() == 4:  #If already (B, H, W, C), no need to reshape
+            B, H, W, C = x.shape  
+        elif x.dim() == 3:  #If flattened (B, HW, C), infer H & W
+            B, HW, C = x.shape
+            H, W = int(math.sqrt(HW)), HW // int(math.sqrt(HW))  # Dynamically determine H & W
+            x = x.view(B, H, W, C)  #Reshape from (B, HW, C) → (B, H, W, C)
+
+        #print(f"Decoding - After reshape: {x.shape}")  # Debugging print
+
+        x = self.linear_recon(x)  #Map from 10 back to 128 channels
+        #print(f"Decoding - After projection: {x.shape}")  # Debugging print
+
+        return x  # Correctly return reshaped tensor
+
+
+
 
     def encode_index(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Run BQS and encode the input tensor x into a set of integer tokens
+        Convert BSQ-encoded representation into discrete integer tokens.
         """
-        return self._code_to_index(self.encode(x))
+        x = self.encode(x)  # Get BSQ representation
+        return self._code_to_index(x)  # Convert to indices
 
     def decode_index(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Decode a set of integer tokens into an image.
+        Convert discrete integer tokens back into an image representation.
         """
         return self.decode(self._index_to_code(x))
 
@@ -75,7 +148,9 @@ class BSQ(torch.nn.Module):
         return (x * (1 << torch.arange(x.size(-1)).to(x.device))).sum(dim=-1)
 
     def _index_to_code(self, x: torch.Tensor) -> torch.Tensor:
-        return 2 * ((x[..., None] & (1 << torch.arange(self._codebook_bits).to(x.device))) > 0).float() - 1
+        return 2 * ((x[..., None] & (1 << torch.arange(self.codebook_bits).to(x.device))) > 0).float() - 1
+
+
 
 
 class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
@@ -87,35 +162,94 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
     """
 
     def __init__(self, patch_size: int = 5, latent_dim: int = 128, codebook_bits: int = 10):
-        super().__init__(patch_size=patch_size, latent_dim=latent_dim)
-        raise NotImplementedError()
-
-    def encode_index(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
-
-    def decode_index(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
+        super().__init__(patch_size=patch_size, latent_dim=latent_dim, bottleneck=latent_dim)
+        self.bsq = BSQ(codebook_bits=codebook_bits, embedding_dim=latent_dim)
+        self.codebook_bits = codebook_bits
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
+        """
+        Encode an input image `x` using the autoencoder and then apply BSQ quantization.
+        """
+        if x.shape[-1] == 3:  # Raw image, needs full encoding
+            #print(f"BSQPatchAutoEncoder.encode() - Running PatchAutoEncoder on raw image {x.shape}")
+            
+            # Add batch dimension if necessary
+            if x.dim() == 3:  # [H, W, C]
+                x = x.unsqueeze(0)  # [1, H, W, C]
+                
+            print(f"After adding batch dim: {x.shape}")
+            latent = super().encode(x)  # Get latent representation, expected shape: [B, H, W, 128]
+            
+            # Apply BSQ quantization to convert embeddings (128) to quantized codes (10)
+            quantized = self.bsq.encode(latent)  # Now shape: [B, H, W, 10]
+            return quantized
+        
+        # Optionally, handle other cases if needed...
+
+        
+
+
+
 
     def decode(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
+        """
+        Decode a BSQ-encoded representation back into an image.
+        """
+        x = self.bsq.decode(x)  # ✅ Ensure BSQ decoding is handled correctly
+        #print(f"BSQPatchAutoEncoder.decode() - After BSQ decode: {x.shape}")  # Debugging
+
+        return super().decode(x)  # ✅ Call PatchAutoEncoder's decode()
+
+
+
+
+
+
+    def encode_index(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Convert an image into discrete integer tokens.
+        """
+        if x.shape[-1] == 3:  # Raw image
+            # Process through full encoder to get quantized codes
+            x = self.encode(x)  # (B, H, W, 10)
+            return self.bsq._code_to_index(x)
+        
+        if x.shape[-1] == 128:  # Embedding
+            # Quantize embeddings then convert to indices
+            x = self.bsq.encode(x)
+            return self.bsq._code_to_index(x)
+        
+        if x.shape[-1] == 10:  # Pre-quantized
+            # Directly convert to indices
+            return self.bsq._code_to_index(x)
+        
+        raise ValueError(f"Unexpected input channels: {x.shape[-1]}")
+
+
+
+
+
+
+
+    def decode_index(self, x: torch.Tensor) -> torch.Tensor:
+        # Convert indices → BSQ codes without decoding
+        codes = self.bsq._index_to_code(x)  # Direct code conversion
+        return self.decode(codes)  #Proper single decoding pass
+
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """
         Return the reconstructed image and a dictionary of additional loss terms you would like to
         minimize (or even just visualize).
-        Hint: It can be helpful to monitor the codebook usage with
-
-              cnt = torch.bincount(self.encode_index(x).flatten(), minlength=2**self.codebook_bits)
-
-              and returning
-
-              {
-                "cb0": (cnt == 0).float().mean().detach(),
-                "cb2": (cnt <= 2).float().mean().detach(),
-                ...
-              }
         """
-        raise NotImplementedError()
+        encoded = self.encode(x)
+        reconstructed = self.decode(encoded)
+
+        # Compute codebook usage statistics
+        token_counts = torch.bincount(self.encode_index(x).flatten(), minlength=2 ** self.codebook_bits)
+        loss_terms = {
+            "cb0": (token_counts == 0).float().mean().detach(),
+            "cb2": (token_counts <= 2).float().mean().detach(),
+        }
+
+        return reconstructed, loss_terms
