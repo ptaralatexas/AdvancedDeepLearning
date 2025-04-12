@@ -91,7 +91,7 @@ class BaseLLM:
         from tqdm import tqdm
 
         # Micro-batching if prompts are large
-        micro_batch_size = 32
+        micro_batch_size = 20
         if len(prompts) > micro_batch_size:
             results = []
             for idx in tqdm(range(0, len(prompts), micro_batch_size), desc=f"LLM Running on Micro Batches of size {micro_batch_size}"):
