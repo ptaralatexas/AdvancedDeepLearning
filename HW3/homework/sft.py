@@ -47,9 +47,21 @@ def tokenize(tokenizer, question: str, answer: str):
 
 def format_example(prompt: str, answer: str) -> dict[str, str]:
     """
-    Construct a question / answer pair. Consider rounding the answer to make it easier for the LLM.
+    Construct a question / answer pair for direct completion.
+    No chat template, just direct completion with <answer> tags.
     """
-    raise NotImplementedError()
+    # The answer should be a float inside the answer tags
+    try:
+        float_answer = float(answer.strip())
+        formatted_answer = f"<answer>{float_answer}</answer>"
+    except ValueError:
+        # Fallback in case answer cannot be converted to float
+        formatted_answer = f"<answer>{answer.strip()}</answer>"
+        
+    return {
+        "question": prompt,
+        "answer": formatted_answer
+    }
 
 
 class TokenizedDataset:
@@ -75,11 +87,86 @@ class TokenizedDataset:
 
 
 def train_model(
-    output_dir: str,
+    output_dir: str = "homework/sft_model",
     **kwargs,
 ):
-    raise NotImplementedError()
+    """
+    Fine-tunes the base model using LoRA adapters following the specific instructions.
+    """
+    from pathlib import Path
+    import os
+    from transformers import Trainer, TrainingArguments
+    from peft import get_peft_model, LoraConfig, TaskType
+    
+    from .base_llm import BaseLLM
+    from .data import Dataset
+    
+    # Create output directory
+    output_dir = Path(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Initialize the base model and tokenizer
+    llm = BaseLLM()
+    model = llm.model
+    tokenizer = llm.tokenizer
+    
+    # Define LoRA configuration as per instructions
+    lora_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        bias="none",
+        target_modules=["all-linear"],  # Add adapter to all layers
+        r=8,  # Rank to keep model size below 20MB
+        lora_alpha=32,  # About 4 times the rank
+        lora_dropout=0.1,
+    )
+    
+    # Get the LoRA model
+    model = get_peft_model(model, lora_config)
+    
+    # Enable input require gradients to avoid bug when using GPU
+    model.enable_input_require_grads()
+    
+    # Print trainable parameters info
+    model.print_trainable_parameters()
+    
+    # Create training and validation datasets
+    train_dataset = TokenizedDataset(tokenizer, Dataset("train"), format_example)
+    eval_dataset = TokenizedDataset(tokenizer, Dataset("valid"), format_example)
+    
+    # Define training arguments based on instructions
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=32,
+        num_train_epochs=5,
+        learning_rate=5e-5,  # A reasonable learning rate
+        gradient_checkpointing=True,  # Save GPU memory
+        output_dir=output_dir,
+        logging_dir=output_dir,
+        report_to="tensorboard",  # Create tensorboard logs
+        save_strategy="epoch",
+        evaluation_strategy="epoch",
+        load_best_model_at_end=True,
+    )
+    
+    # Initialize the Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+    )
+    
+    # Start training
+    trainer.train()
+    
+    # Save the final model to the specified directory
+    trainer.save_model(output_dir)
+    
+    # Test the trained model
+    print("Evaluating the fine-tuned model...")
     test_model(output_dir)
+    
+    return output_dir
 
 
 def test_model(ckpt_path: str):
