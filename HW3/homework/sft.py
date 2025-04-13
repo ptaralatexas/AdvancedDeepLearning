@@ -4,17 +4,43 @@ from .data import Dataset, benchmark
 
 def load() -> BaseLLM:
     from pathlib import Path
-
     from peft import PeftModel
 
     model_name = "sft_model"
     model_path = Path(__file__).parent / model_name
+    
+    # Convert Path to string to avoid the error
+    model_path_str = str(model_path)
 
     llm = BaseLLM()
-    llm.model = PeftModel.from_pretrained(llm.model, model_path).to(llm.device)
+    llm.model = PeftModel.from_pretrained(llm.model, model_path_str).to(llm.device)
     llm.model.eval()
 
     return llm
+
+
+
+
+class TokenizedDataset:
+    def __init__(self, tokenizer, data: Dataset, format_fn):
+        """
+        Use the
+        - BaseLLM.tokenizer
+        - Dataset
+        - format_fn which converts a data element into a dict with entries
+          - question: str
+          - answer: str
+        """
+        self.format_fn = format_fn
+        self.tokenizer = tokenizer
+        self.data = data
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        formated_data = self.format_fn(*self.data[idx])
+        return tokenize(self.tokenizer, **formated_data)
 
 
 def tokenize(tokenizer, question: str, answer: str):
@@ -64,28 +90,6 @@ def format_example(prompt: str, answer: str) -> dict[str, str]:
     }
 
 
-class TokenizedDataset:
-    def __init__(self, tokenizer, data: Dataset, format_fn):
-        """
-        Use the
-        - BaseLLM.tokenizer
-        - Dataset
-        - format_fn which converts a data element into a dict with entries
-          - question: str
-          - answer: str
-        """
-        self.format_fn = format_fn
-        self.tokenizer = tokenizer
-        self.data = data
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        formated_data = self.format_fn(*self.data[idx])
-        return tokenize(self.tokenizer, **formated_data)
-
-
 def train_model(
     output_dir: str = "homework/sft_model",
     **kwargs,
@@ -95,7 +99,7 @@ def train_model(
     """
     from pathlib import Path
     import os
-    from transformers import Trainer, TrainingArguments
+    from transformers import Trainer, TrainingArguments, default_data_collator
     from peft import get_peft_model, LoraConfig, TaskType
     
     from .base_llm import BaseLLM
@@ -112,12 +116,13 @@ def train_model(
     
     # Define LoRA configuration as per instructions
     lora_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        bias="none",
-        target_modules=["all-linear"],  # Add adapter to all layers
-        r=8,  # Rank to keep model size below 20MB
-        lora_alpha=32,  # About 4 times the rank
-        lora_dropout=0.1,
+      task_type=TaskType.CAUSAL_LM,
+      bias="none",
+      # Use specific layer names instead of "all-linear"
+      target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+      r=8,  # Rank to keep model size below 20MB
+      lora_alpha=32,  # About 4 times the rank
+      lora_dropout=0.1,
     )
     
     # Get the LoRA model
@@ -135,17 +140,18 @@ def train_model(
     
     # Define training arguments based on instructions
     training_args = TrainingArguments(
-        output_dir=output_dir,
+        output_dir=str(output_dir),
         per_device_train_batch_size=32,
+        per_device_eval_batch_size=32,
         num_train_epochs=5,
         learning_rate=5e-5,  # A reasonable learning rate
         gradient_checkpointing=True,  # Save GPU memory
-        output_dir=output_dir,
-        logging_dir=output_dir,
+        logging_dir=str(output_dir),
         report_to="tensorboard",  # Create tensorboard logs
         save_strategy="epoch",
         evaluation_strategy="epoch",
         load_best_model_at_end=True,
+        remove_unused_columns=False,  # Important for custom datasets
     )
     
     # Initialize the Trainer
@@ -154,20 +160,20 @@ def train_model(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        data_collator=default_data_collator,
     )
     
     # Start training
     trainer.train()
     
     # Save the final model to the specified directory
-    trainer.save_model(output_dir)
+    trainer.save_model(str(output_dir))
     
     # Test the trained model
     print("Evaluating the fine-tuned model...")
-    test_model(output_dir)
+    test_model(str(output_dir))
     
     return output_dir
-
 
 def test_model(ckpt_path: str):
     testset = Dataset("valid")
@@ -186,3 +192,4 @@ if __name__ == "__main__":
     from fire import Fire
 
     Fire({"train": train_model, "test": test_model, "load": load})
+
