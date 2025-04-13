@@ -115,7 +115,7 @@ class BaseLLM:
 
         n = num_return_sequences or 1
         generation_kwargs = {
-            "max_new_tokens": 100,
+            "max_new_tokens": 200,
             "eos_token_id": self.tokenizer.eos_token_id,
             "num_return_sequences": n,
         }
