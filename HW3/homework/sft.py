@@ -76,13 +76,22 @@ def format_example(prompt: str, answer: str) -> dict[str, str]:
     Construct a question / answer pair for direct completion.
     No chat template, just direct completion with <answer> tags.
     """
-    # The answer should be a float inside the answer tags
+    # Handle the answer which might already be a float
     try:
-        float_answer = float(answer.strip())
+        # If answer is already a float
+        if isinstance(answer, float):
+            float_answer = answer
+        # If answer is a string, try to convert it
+        else:
+            float_answer = float(answer.strip())
+        
         formatted_answer = f"<answer>{float_answer}</answer>"
-    except ValueError:
-        # Fallback in case answer cannot be converted to float
-        formatted_answer = f"<answer>{answer.strip()}</answer>"
+    except (ValueError, AttributeError):
+        # Fallback in case of any conversion error
+        if isinstance(answer, str):
+            formatted_answer = f"<answer>{answer.strip()}</answer>"
+        else:
+            formatted_answer = f"<answer>{answer}</answer>"
         
     return {
         "question": prompt,
@@ -170,8 +179,8 @@ def train_model(
     trainer.save_model(str(output_dir))
     
     # Test the trained model
-    print("Evaluating the fine-tuned model...")
-    test_model(str(output_dir))
+    #print("Evaluating the fine-tuned model...")
+    #test_model(str(output_dir))
     
     return output_dir
 
