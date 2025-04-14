@@ -71,44 +71,54 @@ def tokenize(tokenizer, question: str, answer: str):
     return full
 
 
-def format_example(prompt: str, answer: str) -> dict[str, str]:
+
+
+def format_example(prompt: str, answer: str | float) -> dict[str, str]:
     """
-    Construct a question / answer pair for direct completion.
-    No chat template, just direct completion with <answer> tags.
+    Improved formatting to ensure consistent numeric representation.
     """
-    # Handle the answer which might already be a float
-    try:
-        # If answer is already a float
-        if isinstance(answer, float):
-            float_answer = answer
-        # If answer is a string, try to convert it
-        else:
-            float_answer = float(answer.strip())
-        
-        formatted_answer = f"<answer>{float_answer}</answer>"
-    except (ValueError, AttributeError):
-        # Fallback in case of any conversion error
-        if isinstance(answer, str):
-            formatted_answer = f"<answer>{answer.strip()}</answer>"
-        else:
-            formatted_answer = f"<answer>{answer}</answer>"
-        
+    # Handle the case where answer is already a float
+    if isinstance(answer, float):
+        float_answer = answer
+    else:
+        # Try to convert string to float
+        try:
+            float_answer = float(answer.strip() if hasattr(answer, 'strip') else answer)
+        except (ValueError, AttributeError):
+            # If conversion fails, use the original answer
+            return {
+                "question": prompt,
+                "answer": f"<answer>{answer}</answer>"
+            }
+    
+    # Format the float answer with appropriate precision
+    if float_answer == int(float_answer):
+        # For whole numbers, display as integers
+        formatted_answer = f"<answer>{int(float_answer)}</answer>"
+    else:
+        # For decimals, use consistent formatting
+        formatted_answer = f"<answer>{float_answer:.6f}</answer>"
+        # Remove trailing zeros after decimal point
+        formatted_answer = formatted_answer.replace('</answer>', '</answer>').rstrip('0').rstrip('.')
+        if formatted_answer.endswith('.'):
+            formatted_answer += '0'
+        formatted_answer += '</answer>'
+    
     return {
         "question": prompt,
         "answer": formatted_answer
     }
-
 
 def train_model(
     output_dir: str = "homework/sft_model",
     **kwargs,
 ):
     """
-    Fine-tunes the base model using LoRA adapters following the specific instructions.
+    Enhanced fine-tuning with improved parameters for higher accuracy.
     """
     from pathlib import Path
     import os
-    from transformers import Trainer, TrainingArguments, default_data_collator
+    from transformers import Trainer, TrainingArguments, default_data_collator, EarlyStoppingCallback
     from peft import get_peft_model, LoraConfig, TaskType
     
     from .base_llm import BaseLLM
@@ -123,15 +133,14 @@ def train_model(
     model = llm.model
     tokenizer = llm.tokenizer
     
-    # Define LoRA configuration as per instructions
+    # More conservative LoRA configuration
     lora_config = LoraConfig(
-      task_type=TaskType.CAUSAL_LM,
-      bias="none",
-      # Use specific layer names instead of "all-linear"
-      target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-      r=8,  # Rank to keep model size below 20MB
-      lora_alpha=32,  # About 4 times the rank
-      lora_dropout=0.1,
+        task_type=TaskType.CAUSAL_LM,
+        bias="none",
+        target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        r=8,  # Back to original
+        lora_alpha=32,  # Original value
+        lora_dropout=0.1,  # Original value
     )
     
     # Get the LoRA model
@@ -147,29 +156,35 @@ def train_model(
     train_dataset = TokenizedDataset(tokenizer, Dataset("train"), format_example)
     eval_dataset = TokenizedDataset(tokenizer, Dataset("valid"), format_example)
     
-    # Define training arguments based on instructions
+    # Enhanced training arguments for better learning
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        per_device_train_batch_size=32,
+        per_device_train_batch_size=32,  # Original value
         per_device_eval_batch_size=32,
-        num_train_epochs=5,
-        learning_rate=5e-5,  # A reasonable learning rate
-        gradient_checkpointing=True,  # Save GPU memory
+        num_train_epochs=8,  # Still more than original
+        learning_rate=3e-5,  # Reduced from original
+        warmup_ratio=0.1,
+        lr_scheduler_type="linear",  # Simpler scheduler
+        weight_decay=0.01,
+        gradient_checkpointing=True,
+        max_grad_norm=1.0,  # Add gradient clipping
         logging_dir=str(output_dir),
-        report_to="tensorboard",  # Create tensorboard logs
+        report_to="tensorboard",
         save_strategy="epoch",
         evaluation_strategy="epoch",
         load_best_model_at_end=True,
-        remove_unused_columns=False,  # Important for custom datasets
+        remove_unused_columns=False,
+        # fp16=False,  # Disabled
     )
     
-    # Initialize the Trainer
+    # Initialize the Trainer with early stopping
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=default_data_collator,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]  # Stop if not improving
     )
     
     # Start training
@@ -179,8 +194,8 @@ def train_model(
     trainer.save_model(str(output_dir))
     
     # Test the trained model
-    #print("Evaluating the fine-tuned model...")
-    #test_model(str(output_dir))
+    print("Evaluating the fine-tuned model...")
+    test_model(str(output_dir))
     
     return output_dir
 
