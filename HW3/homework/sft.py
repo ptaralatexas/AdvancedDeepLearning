@@ -78,25 +78,37 @@ def format_example(prompt: str, answer: str | float) -> dict[str, str]:
     Improved formatting to ensure consistent numeric representation.
     """
     # Handle the case where answer is already a float
-    try:
-        if isinstance(answer, float):
-            float_answer = answer
-        else:
+    if isinstance(answer, float):
+        float_answer = answer
+    else:
+        # Try to convert string to float
+        try:
             float_answer = float(answer.strip() if hasattr(answer, 'strip') else answer)
-            
-        # Format the answer consistently
-        if float_answer == int(float_answer):
-            formatted_answer = f"<answer>{int(float_answer)}</answer>"
-        else:
-            # Use a consistent number of decimal places
-            formatted_answer = f"<answer>{float_answer:.4f}</answer>"
-    except (ValueError, AttributeError):
-        formatted_answer = f"<answer>{answer}</answer>"
+        except (ValueError, AttributeError):
+            # If conversion fails, use the original answer
+            return {
+                "question": prompt,
+                "answer": f"<answer>{answer}</answer>"
+            }
+    
+    # Format the float answer with appropriate precision
+    if float_answer == int(float_answer):
+        # For whole numbers, display as integers
+        formatted_answer = f"<answer>{int(float_answer)}</answer>"
+    else:
+        # For decimals, use consistent formatting
+        formatted_answer = f"<answer>{float_answer:.6f}</answer>"
+        # Remove trailing zeros after decimal point
+        formatted_answer = formatted_answer.replace('</answer>', '</answer>').rstrip('0').rstrip('.')
+        if formatted_answer.endswith('.'):
+            formatted_answer += '0'
+        formatted_answer += '</answer>'
     
     return {
         "question": prompt,
         "answer": formatted_answer
     }
+
 
 def train_model(
     output_dir: str = "homework/sft_model",
@@ -127,7 +139,7 @@ def train_model(
         task_type=TaskType.CAUSAL_LM,
         bias="none",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "down_proj", "up_proj"],
-        r=10,  # Slight increase from 8
+        r=12,  # Slight increase from 8
         lora_alpha=40,  # 4x the rank
         lora_dropout=0.07,  # Slightly less dropout
     )
@@ -148,11 +160,11 @@ def train_model(
     # Enhanced training arguments for better learning
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        per_device_train_batch_size=24,  # Slightly smaller than 32
+        per_device_train_batch_size=16,  # Slightly smaller than 32
         gradient_accumulation_steps=2,  # Effective batch size of 48
         per_device_eval_batch_size=32,
         num_train_epochs=12,  # More epochs
-        learning_rate=4e-5,  # Slightly less than original
+        learning_rate=2e-4,  # Slightly less than original
         warmup_ratio=0.15,  # More warmup
         lr_scheduler_type="cosine_with_restarts",  # Try with restarts
         weight_decay=0.01,
