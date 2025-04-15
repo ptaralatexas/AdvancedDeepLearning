@@ -175,12 +175,12 @@ def train_model(
         report_to="tensorboard",
         save_strategy="steps",
         save_steps=100,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=100,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
-        remove_unused_columns=False,
+        remove_unused_columns=False
         # Keep fp16 disabled if it caused issues
     )
     
