@@ -2,18 +2,32 @@ from .base_llm import BaseLLM
 from .sft import test_model
 
 
+
 def load() -> BaseLLM:
     from pathlib import Path
-
     from peft import PeftModel
-
+    import torch
+    
+    # Disable gradients
+    torch.set_grad_enabled(False)
+    
     model_name = "rft_model"
     model_path = Path(__file__).parent / model_name
-
+    model_path_str = str(model_path)
+    
+    # Initialize base model with absolute minimal settings
     llm = BaseLLM()
-    llm.model = PeftModel.from_pretrained(llm.model, model_path).to(llm.device)
+    
+    # Load adapter with minimal options
+    llm.model = PeftModel.from_pretrained(
+        llm.model, 
+        model_path_str,
+        torch_dtype=torch.float16,  # Half precision only
+    ).to(llm.device)
+    
+    # Set to eval mode
     llm.model.eval()
-
+    
     return llm
 
 
@@ -58,8 +72,8 @@ def train_model(
         task_type=TaskType.CAUSAL_LM,
         bias="none",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "down_proj", "up_proj"],
-        r=16,  # Increased rank for better reasoning
-        lora_alpha=64,  # 4x the rank
+        r=12,  # Increased rank for better reasoning
+        lora_alpha=48,  # 4x the rank
         lora_dropout=0.05,
     )
     

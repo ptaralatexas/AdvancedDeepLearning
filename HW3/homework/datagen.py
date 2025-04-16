@@ -86,7 +86,7 @@ def generate_dataset(output_json: str, oversample: int = 10, temperature: float 
         json.dump(rft_data, f, indent=2)
     
     print(f"Dataset saved to {output_json}")
-    return rft_data
+    #return rft_data
 
 
 if __name__ == "__main__":
