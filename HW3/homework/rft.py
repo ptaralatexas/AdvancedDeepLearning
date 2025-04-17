@@ -8,26 +8,17 @@ def load() -> BaseLLM:
     from peft import PeftModel
     import torch
     
-    # Disable gradients
+    # Disable gradients immediately
     torch.set_grad_enabled(False)
     
     model_name = "rft_model"
     model_path = Path(__file__).parent / model_name
     model_path_str = str(model_path)
     
-    # Initialize base model with absolute minimal settings
     llm = BaseLLM()
-    
-    # Load adapter with minimal options
-    llm.model = PeftModel.from_pretrained(
-        llm.model, 
-        model_path_str,
-        torch_dtype=torch.float16,  # Half precision only
-    ).to(llm.device)
-    
-    # Set to eval mode
+    llm.model = PeftModel.from_pretrained(llm.model, model_path_str).to(llm.device)
     llm.model.eval()
-    
+
     return llm
 
 
@@ -117,9 +108,8 @@ def train_model(
     # Training arguments
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        per_device_train_batch_size=8,  # Smaller batch size for longer sequences
+        per_device_train_batch_size=16,  # Smaller batch size for longer sequences
         gradient_accumulation_steps=4,  # Effective batch size of 32
-        per_device_eval_batch_size=16,
         num_train_epochs=15,  # Extended training for better learning
         learning_rate=5e-5,
         warmup_ratio=0.1,
@@ -131,13 +121,13 @@ def train_model(
         logging_steps=10,
         report_to="tensorboard",
         save_strategy="steps",
-        save_steps=50,
+        #save_steps=50,
         eval_strategy="steps",  # Using new parameter name
         eval_steps=50,
         load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
-        remove_unused_columns=False,
+        metric_for_best_model="eval_loss"
+        #greater_is_better=False,
+        #remove_unused_columns=False,
     )
     
     # Initialize the Trainer
