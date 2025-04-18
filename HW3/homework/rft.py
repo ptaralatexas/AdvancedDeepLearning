@@ -65,7 +65,7 @@ def train_model(
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "down_proj", "up_proj"],
         r=12,  # Increased rank for better reasoning
         lora_alpha=48,  # 4x the rank
-        lora_dropout=0.05,
+        lora_dropout=0.1,
     )
     
     # Get the LoRA model
@@ -109,23 +109,20 @@ def train_model(
     training_args = TrainingArguments(
         output_dir=str(output_dir),
         per_device_train_batch_size=16,  # Smaller batch size for longer sequences
-        gradient_accumulation_steps=4,  # Effective batch size of 32
-        num_train_epochs=15,  # Extended training for better learning
+        #gradient_accumulation_steps=4,  # Effective batch size of 32
+        num_train_epochs=10,  # Extended training for better learning
         learning_rate=5e-5,
-        warmup_ratio=0.1,
-        lr_scheduler_type="cosine",
-        weight_decay=0.01,
         gradient_checkpointing=True,
-        max_grad_norm=1.0,
+        #max_grad_norm=1.0,
         logging_dir=str(output_dir),
         logging_steps=10,
         report_to="tensorboard",
-        save_strategy="steps",
+        save_strategy="no"
         #save_steps=50,
-        eval_strategy="steps",  # Using new parameter name
-        eval_steps=50,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss"
+        #eval_strategy="steps",  # Using new parameter name
+        #eval_steps=50,
+        #load_best_model_at_end=True,
+        #metric_for_best_model="eval_loss"
         #greater_is_better=False,
         #remove_unused_columns=False,
     )
@@ -135,9 +132,9 @@ def train_model(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=default_data_collator,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
+        eval_dataset=eval_dataset
+        #data_collator=default_data_collator,
+        #callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
     )
     
     # Start training
@@ -147,10 +144,10 @@ def train_model(
     trainer.save_model(str(output_dir))
     
     # Test the trained model
-    print("Evaluating the fine-tuned model...")
-    test_model(str(output_dir))
+    #print("Evaluating the fine-tuned model...")
+    #test_model(str(output_dir))
     
-    return output_dir
+    #return output_dir
 
 if __name__ == "__main__":
     from fire import Fire
