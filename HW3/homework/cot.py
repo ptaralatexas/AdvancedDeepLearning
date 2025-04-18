@@ -32,7 +32,6 @@ class CoTModel(BaseLLM):
       return self.tokenizer.apply_chat_template(conversation)
 
 def load() -> CoTModel:
-    import torch
     # Force deterministic operations for more consistent results
     torch.use_deterministic_algorithms(True, warn_only=True)
     model = CoTModel()
