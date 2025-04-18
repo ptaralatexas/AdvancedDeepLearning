@@ -139,8 +139,8 @@ def train_model(
         task_type=TaskType.CAUSAL_LM,
         bias="none",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "down_proj", "up_proj"],
-        r=12,  # Slight increase from 8
-        lora_alpha=40,  # 4x the rank
+        r=8,  # Slight increase from 8
+        lora_alpha=32,  # 4x the rank
         lora_dropout=0.07,  # Slightly less dropout
     )
     
