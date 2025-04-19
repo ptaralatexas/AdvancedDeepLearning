@@ -33,7 +33,7 @@ class CoTModel(BaseLLM):
 
 def load() -> CoTModel:
     # Force deterministic operations for more consistent results
-    torch.use_deterministic_algorithms(True, warn_only=True)
+    #torch.use_deterministic_algorithms(True, warn_only=True)
     model = CoTModel()
     return model
 

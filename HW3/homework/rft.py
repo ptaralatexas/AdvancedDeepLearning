@@ -114,7 +114,6 @@ def train_model(
         learning_rate=7e-5,
         warmup_ratio=0.1,
         lr_scheduler_type="cosine_with_restarts",
-        weight_decay=0.01,
         gradient_checkpointing=True,
         max_grad_norm=1.0,
         logging_dir=str(output_dir),
