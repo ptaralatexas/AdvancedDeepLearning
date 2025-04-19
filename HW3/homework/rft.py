@@ -108,27 +108,26 @@ def train_model(
     # Training arguments
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        per_device_train_batch_size=32,
-        #gradient_accumulation_steps=2,  # Added back for effective batch size of 32
-        num_train_epochs=15,  # More epochs for better learning
-        learning_rate=8e-5,
-        #warmup_ratio=0.1,  # Add warmup
-        #lr_scheduler_type="cosine",  # Add scheduler
-        #weight_decay=0.01,  # Add weight decay for regularization
+        per_device_train_batch_size=24,
+        gradient_accumulation_steps=2,
+        num_train_epochs=18,
+        learning_rate=7e-5,
+        warmup_ratio=0.1,
+        lr_scheduler_type="cosine_with_restarts",
+        weight_decay=0.01,
         gradient_checkpointing=True,
-        #max_grad_norm=1.0,  # Add gradient clipping
+        max_grad_norm=1.0,
         logging_dir=str(output_dir),
         logging_steps=10,
         report_to="tensorboard",
-        save_strategy="no",
-        #save_steps=50,
-        #eval_strategy="steps",
-        #eval_steps=50,
-        #load_best_model_at_end=True,
-        #metric_for_best_model="eval_loss",
-        #greater_is_better=False,
-        #remove_unused_columns=False,
-        fp16=True,  # Add mixed precision training if GPU available
+        save_strategy="steps",
+        save_steps=100,
+        eval_strategy="steps",
+        eval_steps=100,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        fp16=True,
     )
     
     # Initialize the Trainer
@@ -136,9 +135,8 @@ def train_model(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset
-        #data_collator=default_data_collator,
-        #callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
+        eval_dataset=eval_dataset,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
     )
     
     # Start training
