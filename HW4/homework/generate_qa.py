@@ -278,32 +278,178 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     Args:
         info_path: Path to the info.json file
         view_index: Index of the view to analyze
-        img_width: Width of the image (default: 100)
-        img_height: Height of the image (default: 150)
+        img_width: Width of the image (default: 150)
+        img_height: Height of the image (default: 100)
 
     Returns:
         List of dictionaries, each containing a question and answer
     """
-    # 1. Ego car question
-    # What kart is the ego car?
-
+    # Extract kart objects and track info
+    karts = extract_kart_objects(info_path, view_index, img_width, img_height)
+    track_name = extract_track_info(info_path)
+    
+    # If no karts are detected, return a minimal set of QA pairs
+    if not karts:
+        return [
+            {
+                "question": "How many karts are visible in this image?",
+                "answer": "0"
+            },
+            {
+                "question": "What track is shown in this image?",
+                "answer": track_name
+            }
+        ]
+    
+    # Find ego car
+    ego_car = None
+    for kart in karts:
+        if kart["is_ego"]:
+            ego_car = kart
+            break
+    
+    # If no ego car is found, use the center kart as reference
+    if ego_car is None:
+        for kart in karts:
+            if kart["is_center_kart"]:
+                ego_car = kart
+                break
+    
+    # If still no reference kart, use the first one
+    if ego_car is None and karts:
+        ego_car = karts[0]
+    
+    qa_pairs = []
+    
+    # 1. Ego car question (if we have one)
+    if ego_car and ego_car["is_ego"]:
+        qa_pairs.append({
+            "question": "What kart is the ego car (player's kart)?",
+            "answer": ego_car["kart_name"]
+        })
+    
     # 2. Total karts question
-    # How many karts are there in the scenario?
-
+    qa_pairs.append({
+        "question": "How many karts are visible in this image?",
+        "answer": str(len(karts))
+    })
+    
     # 3. Track information questions
-    # What track is this?
+    qa_pairs.append({
+        "question": "What track is shown in this image?",
+        "answer": track_name
+    })
+    
+    # If we have an ego car, we can ask positional questions
+    if ego_car:
+        # Calculate the relative positions of other karts
+        karts_left = 0
+        karts_right = 0
+        karts_front = 0
+        karts_behind = 0
+        
+        # Get ego car's center position
+        ego_x, ego_y = ego_car["center"]
+        
+        # Assuming y-axis points downward (higher y-value means lower on screen)
+        # and x-axis points rightward (higher x-value means more to the right)
+        for kart in karts:
+            if kart is ego_car:
+                continue
+                
+            kart_x, kart_y = kart["center"]
+            
+            # 4. Relative position questions for each kart
+            # Left/Right position
+            if kart_x < ego_x:
+                position_x = "to the left of"
+                karts_left += 1
+            else:
+                position_x = "to the right of"
+                karts_right += 1
+                
+            # Front/Behind position (in racing games, usually lower y means further ahead)
+            if kart_y < ego_y:
+                position_y = "in front of"
+                karts_front += 1
+            else:
+                position_y = "behind"
+                karts_behind += 1
+                
+            qa_pairs.append({
+                "question": f"Is {kart['kart_name']} to the left or right of the ego car?",
+                "answer": position_x.split(" ")[2] if "to the" in position_x else position_x
+            })
+            
+            qa_pairs.append({
+                "question": f"Is {kart['kart_name']} in front of or behind the ego car?",
+                "answer": position_y if position_y != "in front of" else "in front"
+            })
+        
+        # 5. Counting questions
+        qa_pairs.append({
+            "question": "How many karts are to the left of the ego car?",
+            "answer": str(karts_left)
+        })
+        
+        qa_pairs.append({
+            "question": "How many karts are to the right of the ego car?",
+            "answer": str(karts_right)
+        })
+        
+        qa_pairs.append({
+            "question": "How many karts are in front of the ego car?",
+            "answer": str(karts_front)
+        })
+        
+        qa_pairs.append({
+            "question": "How many karts are behind the ego car?",
+            "answer": str(karts_behind)
+        })
+    
+    # 6. Positional questions (not dependent on ego car)
+    leftmost_kart = min(karts, key=lambda k: k["center"][0])
+    rightmost_kart = max(karts, key=lambda k: k["center"][0])
+    
+    qa_pairs.append({
+        "question": "Which kart is the leftmost in the image?",
+        "answer": leftmost_kart["kart_name"]
+    })
+    
+    qa_pairs.append({
+        "question": "Which kart is the rightmost in the image?",
+        "answer": rightmost_kart["kart_name"]
+    })
+    
+    # 7. Distance questions
+    if len(karts) > 1:
+        # Find the two closest karts
+        min_distance = float('inf')
+        closest_pair = None
+        
+        for i in range(len(karts)):
+            for j in range(i+1, len(karts)):
+                kart1 = karts[i]
+                kart2 = karts[j]
+                
+                # Calculate Euclidean distance between the two karts
+                x1, y1 = kart1["center"]
+                x2, y2 = kart2["center"]
+                distance = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+                
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_pair = (kart1["kart_name"], kart2["kart_name"])
+        
+        if closest_pair:
+            qa_pairs.append({
+                "question": "Which two karts are closest to each other?",
+                "answer": f"{closest_pair[0]} and {closest_pair[1]}"
+            })
+    
+    return qa_pairs
 
-    # 4. Relative position questions for each kart
-    # Is {kart_name} to the left or right of the ego car?
-    # Is {kart_name} in front of or behind the ego car?
 
-    # 5. Counting questions
-    # How many karts are to the left of the ego car?
-    # How many karts are to the right of the ego car?
-    # How many karts are in front of the ego car?
-    # How many karts are behind the ego car?
-
-    raise NotImplementedError("Not implemented")
 
 
 def check_qa_pairs(info_file: str, view_index: int):
@@ -340,6 +486,154 @@ def check_qa_pairs(info_file: str, view_index: int):
         print(f"A: {qa['answer']}")
         print("-" * 50)
 
+def process_dataset(data_folder: str, output_file: str, max_samples: int = None):
+    """
+    Process the entire dataset and generate QA pairs for all info files.
+    
+    Args:
+        data_folder: Path to the folder containing the data
+        output_file: Path to output JSON file to save the QA pairs
+        max_samples: Maximum number of samples to process (None for all)
+    """
+    data_path = Path(data_folder)
+    info_files = list(data_path.glob("**/*_info.json"))
+    
+    # Limit number of samples if specified
+    if max_samples:
+        info_files = info_files[:max_samples]
+    
+    qa_dataset = []
+    
+    for info_file in info_files:
+        base_name = info_file.stem.replace("_info", "")
+        
+        # For each info file, find all associated image files
+        image_files = list(info_file.parent.glob(f"{base_name}_*_im.jpg"))
+        
+        for image_file in image_files:
+            # Extract view index from image filename
+            _, view_index = extract_frame_info(str(image_file))
+            
+            # Generate QA pairs for this view
+            qa_pairs = generate_qa_pairs(str(info_file), view_index)
+            
+            # Add to dataset
+            qa_dataset.append({
+                "image_path": str(image_file),
+                "info_path": str(info_file),
+                "qa_pairs": qa_pairs
+            })
+            
+            print(f"Processed {image_file.name}")
+    
+    # Save dataset to output file
+    with open(output_file, 'w') as f:
+        json.dump(qa_dataset, f, indent=2)
+    
+    print(f"Generated {len(qa_dataset)} QA samples saved to {output_file}")
+
+
+def generate_balanced_qa_dataset(data_folder: str, output_file: str, samples_per_track: int = 100):
+    """
+    Generate a balanced QA dataset with equal representation from all available tracks.
+    
+    Args:
+        data_folder: Path to the folder containing the data
+        output_file: Path to output JSON file to save the QA pairs
+        samples_per_track: Number of samples to include per track
+    """
+    data_path = Path(data_folder)
+    info_files = list(data_path.glob("**/*_info.json"))
+    
+    # Group info files by track
+    track_info_files = {}
+    for info_file in info_files:
+        track_name = extract_track_info(str(info_file))
+        if track_name not in track_info_files:
+            track_info_files[track_name] = []
+        track_info_files[track_name].append(info_file)
+    
+    qa_dataset = []
+    
+    # Process each track
+    for track_name, files in track_info_files.items():
+        print(f"Processing track: {track_name} ({len(files)} info files)")
+        
+        # Limit samples per track
+        track_samples = 0
+        
+        for info_file in files:
+            base_name = info_file.stem.replace("_info", "")
+            
+            # For each info file, find all associated image files
+            image_files = list(info_file.parent.glob(f"{base_name}_*_im.jpg"))
+            
+            for image_file in image_files:
+                if track_samples >= samples_per_track:
+                    break
+                    
+                # Extract view index from image filename
+                _, view_index = extract_frame_info(str(image_file))
+                
+                # Generate QA pairs for this view
+                qa_pairs = generate_qa_pairs(str(info_file), view_index)
+                
+                # Add to dataset
+                qa_dataset.append({
+                    "image_path": str(image_file),
+                    "info_path": str(info_file),
+                    "qa_pairs": qa_pairs
+                })
+                
+                track_samples += 1
+                print(f"Processed {image_file.name} - {track_samples}/{samples_per_track} for {track_name}")
+                
+            if track_samples >= samples_per_track:
+                break
+    
+    # Save dataset to output file
+    with open(output_file, 'w') as f:
+        json.dump(qa_dataset, f, indent=2)
+    
+    print(f"Generated balanced dataset with {len(qa_dataset)} QA samples saved to {output_file}")
+
+
+def format_for_vlm_training(qa_dataset_path: str, output_file: str):
+    """
+    Format the QA dataset into a format suitable for VLM training.
+    
+    Args:
+        qa_dataset_path: Path to the QA dataset JSON file
+        output_file: Path to output JSON file for VLM training
+    """
+    # Load QA dataset
+    with open(qa_dataset_path) as f:
+        qa_dataset = json.load(f)
+    
+    # Format for VLM training
+    vlm_dataset = []
+    
+    for sample in qa_dataset:
+        image_path = sample["image_path"]
+        
+        for qa_pair in sample["qa_pairs"]:
+            question = qa_pair["question"]
+            answer = qa_pair["answer"]
+            
+            vlm_dataset.append({
+                "image": image_path,
+                "question": question,
+                "answer": answer
+            })
+    
+    # Save formatted dataset
+    with open(output_file, 'w') as f:
+        json.dump(vlm_dataset, f, indent=2)
+    
+    print(f"Formatted {len(vlm_dataset)} QA pairs for VLM training, saved to {output_file}")
+
+
+
 
 """
 Usage Example: Visualize QA pairs for a specific file and view:
@@ -350,8 +644,12 @@ You probably need to add additional commands to Fire below.
 
 
 def main():
-    fire.Fire({"check": check_qa_pairs})
-
+    fire.Fire({
+        "check": check_qa_pairs,
+        "process": process_dataset,
+        "balanced": generate_balanced_qa_dataset,
+        "format": format_for_vlm_training
+    })
 
 if __name__ == "__main__":
     main()
