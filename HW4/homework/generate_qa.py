@@ -141,8 +141,9 @@ def extract_kart_objects(
     Args:
         info_path: Path to the corresponding info.json file
         view_index: Index of the view to analyze
-        img_width: Width of the image (default: 100)
-        img_height: Height of the image (default: 150)
+        img_width: Width of the image (default: 150)
+        img_height: Height of the image (default: 100)
+        min_box_size: Minimum size for bounding boxes to be considered
 
     Returns:
         List of kart objects, each containing:
@@ -150,9 +151,96 @@ def extract_kart_objects(
         - kart_name: The name of the kart
         - center: (x, y) coordinates of the kart's center
         - is_center_kart: Boolean indicating if this is the kart closest to image center
+        - bounding_box: (x1, y1, x2, y2) coordinates of the bounding box
     """
+    # Read the info.json file
+    with open(info_path) as f:
+        info = json.load(f)
 
-    raise NotImplementedError("Not implemented")
+    # Get the correct detection frame based on view index
+    if view_index < len(info["detections"]):
+        frame_detections = info["detections"][view_index]
+    else:
+        print(f"Warning: View index {view_index} out of range for detections")
+        return []
+
+    # Calculate scaling factors for the current image size
+    scale_x = img_width / ORIGINAL_WIDTH
+    scale_y = img_height / ORIGINAL_HEIGHT
+
+    # Extract kart character names from info
+    kart_names = {}
+    if "kart_names" in info:
+        kart_names = info["kart_names"]
+
+    # Image center coordinates
+    image_center_x = img_width / 2
+    image_center_y = img_height / 2
+
+    # Extract kart objects
+    karts = []
+    min_center_distance = float('inf')
+    center_kart_index = -1
+
+    for i, detection in enumerate(frame_detections):
+        class_id, track_id, x1, y1, x2, y2 = detection
+        class_id = int(class_id)
+        track_id = int(track_id)
+
+        # Only consider objects of type "Kart"
+        if class_id != 1:
+            continue
+
+        # Scale coordinates to fit the current image size
+        x1_scaled = int(x1 * scale_x)
+        y1_scaled = int(y1 * scale_y)
+        x2_scaled = int(x2 * scale_x)
+        y2_scaled = int(y2 * scale_y)
+
+        # Skip if bounding box is too small
+        if (x2_scaled - x1_scaled) < min_box_size or (y2_scaled - y1_scaled) < min_box_size:
+            continue
+
+        # Skip if bounding box is out of the image
+        if x2_scaled < 0 or x1_scaled > img_width or y2_scaled < 0 or y1_scaled > img_height:
+            continue
+
+        # Calculate center of the bounding box
+        center_x = (x1_scaled + x2_scaled) / 2
+        center_y = (y1_scaled + y2_scaled) / 2
+
+        # Calculate distance to image center
+        distance_to_center = ((center_x - image_center_x) ** 2 + (center_y - image_center_y) ** 2) ** 0.5
+
+        # Get kart name from the kart_names dict, or use a default name
+        kart_name = kart_names.get(str(track_id), f"Kart {track_id}")
+        
+        # Identify ego car (typically track_id 0)
+        is_ego = (track_id == 0)
+
+        # Create kart object
+        kart = {
+            "instance_id": track_id,
+            "kart_name": kart_name,
+            "center": (center_x, center_y),
+            "is_center_kart": False,  # Will update this later
+            "is_ego": is_ego,
+            "bounding_box": (x1_scaled, y1_scaled, x2_scaled, y2_scaled),
+            "distance_to_center": distance_to_center
+        }
+        
+        karts.append(kart)
+
+        # Check if this is the kart closest to the center
+        if distance_to_center < min_center_distance:
+            min_center_distance = distance_to_center
+            center_kart_index = len(karts) - 1
+
+    # Mark the center kart
+    if center_kart_index >= 0:
+        karts[center_kart_index]["is_center_kart"] = True
+
+    return karts
 
 def extract_track_info(info_path: str) -> str:
     """
@@ -164,8 +252,23 @@ def extract_track_info(info_path: str) -> str:
     Returns:
         Track name as a string
     """
+    # Read the info.json file
+    with open(info_path) as f:
+        info = json.load(f)
 
-    raise NotImplementedError("Not implemented")
+    # Extract track name from the info
+    if "track_name" in info:
+        return info["track_name"]
+    
+    # If track_name is not available, try to get it from filename or return default
+    info_file = Path(info_path)
+    parent_dir = info_file.parent
+    
+    # Try to get track info from parent directory name as fallback
+    if parent_dir.name.lower() != "valid" and parent_dir.name.lower() != "train":
+        return parent_dir.name
+        
+    return "Unknown Track"
 
 
 def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img_height: int = 100) -> list:
