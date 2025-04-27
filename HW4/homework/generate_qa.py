@@ -42,12 +42,20 @@ def extract_frame_info(image_path: str) -> tuple[int, int]:
         Tuple of (frame_id, view_index)
     """
     filename = Path(image_path).name
-    # Format is typically: XXXXX_YY_im.png where XXXXX is frame_id and YY is view_index
+    # Format is: XXXXX_YY_im.jpg where XXXXX is frame_id and YY is view_index
+    # Example: 00000_00_im.jpg, 00000_01_im.jpg, etc.
+    
     parts = filename.split("_")
     if len(parts) >= 2:
-        frame_id = int(parts[0], 16)  # Convert hex to decimal
-        view_index = int(parts[1])
-        return frame_id, view_index
+        try:
+            # For files like 00000_00_im.jpg, parts[0] is '00000' and parts[1] is '00'
+            frame_id = int(parts[0])  # Already in decimal, no need for hex conversion
+            view_index = int(parts[1])
+            return frame_id, view_index
+        except ValueError:
+            # Handle the case where conversion fails
+            print(f"Warning: Could not extract frame info from {filename}")
+            return 0, 0
     return 0, 0  # Default values if parsing fails
 
 
@@ -68,9 +76,14 @@ def draw_detections(
         The annotated image as a numpy array
     """
     # Read the image using PIL
-    pil_image = Image.open(image_path)
-    if pil_image is None:
-        raise ValueError(f"Could not read image at {image_path}")
+    try:
+        pil_image = Image.open(image_path)
+        if pil_image is None:
+            raise ValueError(f"Could not read image at {image_path}")
+    except Exception as e:
+        print(f"Error opening image {image_path}: {e}")
+        # Return a blank image
+        return np.zeros((400, 600, 3), dtype=np.uint8)
 
     # Get image dimensions
     img_width, img_height = pil_image.size
@@ -79,17 +92,21 @@ def draw_detections(
     draw = ImageDraw.Draw(pil_image)
 
     # Read the info.json file
-    with open(info_path) as f:
-        info = json.load(f)
+    try:
+        with open(info_path) as f:
+            info = json.load(f)
+    except Exception as e:
+        print(f"Error reading info file {info_path}: {e}")
+        return np.array(pil_image)
 
     # Extract frame ID and view index from image filename
     _, view_index = extract_frame_info(image_path)
 
     # Get the correct detection frame based on view index
-    if view_index < len(info["detections"]):
+    if "detections" in info and view_index < len(info["detections"]):
         frame_detections = info["detections"][view_index]
     else:
-        print(f"Warning: View index {view_index} out of range for detections")
+        print(f"Warning: View index {view_index} out of range for detections or no detections found")
         return np.array(pil_image)
 
     # Calculate scaling factors
@@ -98,6 +115,10 @@ def draw_detections(
 
     # Draw each detection
     for detection in frame_detections:
+        if len(detection) < 6:
+            print(f"Warning: Invalid detection format: {detection}")
+            continue
+            
         class_id, track_id, x1, y1, x2, y2 = detection
         class_id = int(class_id)
         track_id = int(track_id)
@@ -154,14 +175,18 @@ def extract_kart_objects(
         - bounding_box: (x1, y1, x2, y2) coordinates of the bounding box
     """
     # Read the info.json file
-    with open(info_path) as f:
-        info = json.load(f)
+    try:
+        with open(info_path) as f:
+            info = json.load(f)
+    except Exception as e:
+        print(f"Error reading info file {info_path}: {e}")
+        return []
 
     # Get the correct detection frame based on view index
-    if view_index < len(info["detections"]):
+    if "detections" in info and view_index < len(info["detections"]):
         frame_detections = info["detections"][view_index]
     else:
-        print(f"Warning: View index {view_index} out of range for detections")
+        print(f"Warning: View index {view_index} out of range for detections or no detections found")
         return []
 
     # Calculate scaling factors for the current image size
@@ -183,6 +208,10 @@ def extract_kart_objects(
     center_kart_index = -1
 
     for i, detection in enumerate(frame_detections):
+        if len(detection) < 6:
+            print(f"Warning: Invalid detection format: {detection}")
+            continue
+            
         class_id, track_id, x1, y1, x2, y2 = detection
         class_id = int(class_id)
         track_id = int(track_id)
@@ -242,6 +271,7 @@ def extract_kart_objects(
 
     return karts
 
+
 def extract_track_info(info_path: str) -> str:
     """
     Extract track information from the info.json file.
@@ -253,8 +283,12 @@ def extract_track_info(info_path: str) -> str:
         Track name as a string
     """
     # Read the info.json file
-    with open(info_path) as f:
-        info = json.load(f)
+    try:
+        with open(info_path) as f:
+            info = json.load(f)
+    except Exception as e:
+        print(f"Error reading info file {info_path}: {e}")
+        return "Unknown Track"
 
     # Extract track name from the info
     if "track_name" in info:
@@ -304,14 +338,14 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     # Find ego car
     ego_car = None
     for kart in karts:
-        if kart["is_ego"]:
+        if kart.get("is_ego", False):
             ego_car = kart
             break
     
     # If no ego car is found, use the center kart as reference
     if ego_car is None:
         for kart in karts:
-            if kart["is_center_kart"]:
+            if kart.get("is_center_kart", False):
                 ego_car = kart
                 break
     
@@ -322,7 +356,7 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     qa_pairs = []
     
     # 1. Ego car question (if we have one)
-    if ego_car and ego_car["is_ego"]:
+    if ego_car and ego_car.get("is_ego", False):
         qa_pairs.append({
             "question": "What kart is the ego car (player's kart)?",
             "answer": ego_car["kart_name"]
@@ -408,18 +442,19 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
         })
     
     # 6. Positional questions (not dependent on ego car)
-    leftmost_kart = min(karts, key=lambda k: k["center"][0])
-    rightmost_kart = max(karts, key=lambda k: k["center"][0])
-    
-    qa_pairs.append({
-        "question": "Which kart is the leftmost in the image?",
-        "answer": leftmost_kart["kart_name"]
-    })
-    
-    qa_pairs.append({
-        "question": "Which kart is the rightmost in the image?",
-        "answer": rightmost_kart["kart_name"]
-    })
+    if len(karts) > 0:
+        leftmost_kart = min(karts, key=lambda k: k["center"][0])
+        rightmost_kart = max(karts, key=lambda k: k["center"][0])
+        
+        qa_pairs.append({
+            "question": "Which kart is the leftmost in the image?",
+            "answer": leftmost_kart["kart_name"]
+        })
+        
+        qa_pairs.append({
+            "question": "Which kart is the rightmost in the image?",
+            "answer": rightmost_kart["kart_name"]
+        })
     
     # 7. Distance questions
     if len(karts) > 1:
@@ -450,6 +485,66 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     return qa_pairs
 
 
+def find_image_file(info_file: str, view_index: int) -> str:
+    """
+    Find the corresponding image file for an info file and view index.
+    Handles different file extensions and naming patterns.
+
+    Args:
+        info_file: Path to the info.json file
+        view_index: Index of the view to analyze
+
+    Returns:
+        Path to the image file if found, None otherwise
+    """
+    info_path = Path(info_file)
+    # Get the base name without the "_info" suffix
+    # For example, for "00000_info.json", base_name will be "00000"
+    base_name = info_path.stem.replace("_info", "")
+    
+    # Based on the file structure shown, the pattern is XXXXX_YY_im.jpg
+    # Where XXXXX is the base name and YY is the view index with 2-digit padding
+    
+    # Try with the exact pattern matching the file structure
+    pattern = f"{base_name}_{view_index:02d}_im.jpg"
+    files = list(info_path.parent.glob(pattern))
+    if files:
+        return str(files[0])
+    
+    # If the pattern fails, try to be more flexible with extensions
+    extensions = ['.jpg', '.png']
+    for ext in extensions:
+        pattern = f"{base_name}_{view_index:02d}_im{ext}"
+        files = list(info_path.parent.glob(pattern))
+        if files:
+            return str(files[0])
+    
+    # Try with 1-digit (no padding) as a fallback
+    for ext in extensions:
+        pattern = f"{base_name}_{view_index}_im{ext}"
+        files = list(info_path.parent.glob(pattern))
+        if files:
+            return str(files[0])
+    
+    # List all available image files for this base name
+    image_files = []
+    for ext in extensions:
+        pattern = f"{base_name}_*_im{ext}"
+        files = list(info_path.parent.glob(pattern))
+        if files:
+            image_files.extend(files)
+    
+    if image_files:
+        print(f"Warning: Could not find exact view index {view_index}, available view indices are:")
+        for img in image_files:
+            _, img_view_index = extract_frame_info(str(img))
+            print(f"  - {img.name} (view index: {img_view_index})")
+        
+        # Use the first available image as a last resort
+        return str(image_files[0])
+    
+    # No image found
+    return None
 
 
 def check_qa_pairs(info_file: str, view_index: int):
@@ -460,31 +555,78 @@ def check_qa_pairs(info_file: str, view_index: int):
         info_file: Path to the info.json file
         view_index: Index of the view to analyze
     """
+    print(f"Checking QA pairs for {info_file} with view index {view_index}")
+    
     # Find corresponding image file
-    info_path = Path(info_file)
-    base_name = info_path.stem.replace("_info", "")
-    image_file = list(info_path.parent.glob(f"{base_name}_{view_index:02d}_im.jpg"))[0]
+    image_file = find_image_file(info_file, view_index)
+    
+    if not image_file:
+        print(f"Error: No image file found for {info_file} with view index {view_index}")
+        # List available view indices
+        info_path = Path(info_file)
+        base_name = info_path.stem.replace("_info", "")
+        all_images = []
+        for ext in ['.jpg', '.png']:
+            pattern = f"{base_name}_*_im{ext}"
+            all_images.extend(list(info_path.parent.glob(pattern)))
+        
+        if all_images:
+            print(f"Available images for this info file:")
+            for img in all_images:
+                frame_id, img_view_index = extract_frame_info(str(img))
+                print(f"  - {img.name} (view index: {img_view_index})")
+            print("\nPlease specify one of these view indices.")
+        else:
+            print("No image files found at all for this info file.")
+        return
+
+    print(f"Found image file: {image_file}")
+
+    try:
+        # Read the info.json file - verify it exists and is valid
+        with open(info_file) as f:
+            info = json.load(f)
+            
+        # Verify the detections exist and have data for the specified view index
+        if "detections" not in info:
+            print(f"Warning: No 'detections' field found in {info_file}")
+        elif view_index >= len(info["detections"]):
+            print(f"Warning: View index {view_index} out of range for detections (max: {len(info['detections'])-1})")
+            print(f"Available view indices: 0-{len(info['detections'])-1}")
+            return
+    except Exception as e:
+        print(f"Error reading or parsing info file: {e}")
+        return
 
     # Visualize detections
-    annotated_image = draw_detections(str(image_file), info_file)
+    try:
+        print("Drawing detections...")
+        annotated_image = draw_detections(image_file, info_file)
 
-    # Display the image
-    plt.figure(figsize=(12, 8))
-    plt.imshow(annotated_image)
-    plt.axis("off")
-    plt.title(f"Frame {extract_frame_info(str(image_file))[0]}, View {view_index}")
-    plt.show()
-
+        # Display the image
+        plt.figure(figsize=(12, 8))
+        plt.imshow(annotated_image)
+        plt.axis("off")
+        plt.title(f"Frame {extract_frame_info(image_file)[0]}, View {view_index}")
+        plt.show()
+    except Exception as e:
+        print(f"Error visualizing detections: {e}")
+    
     # Generate QA pairs
-    qa_pairs = generate_qa_pairs(info_file, view_index)
+    try:
+        print("Generating QA pairs...")
+        qa_pairs = generate_qa_pairs(info_file, view_index)
 
-    # Print QA pairs
-    print("\nQuestion-Answer Pairs:")
-    print("-" * 50)
-    for qa in qa_pairs:
-        print(f"Q: {qa['question']}")
-        print(f"A: {qa['answer']}")
+        # Print QA pairs
+        print("\nQuestion-Answer Pairs:")
         print("-" * 50)
+        for qa in qa_pairs:
+            print(f"Q: {qa['question']}")
+            print(f"A: {qa['answer']}")
+            print("-" * 50)
+    except Exception as e:
+        print(f"Error generating QA pairs: {e}")
+
 
 def process_dataset(data_folder: str, output_file: str, max_samples: int = None):
     """
@@ -508,23 +650,29 @@ def process_dataset(data_folder: str, output_file: str, max_samples: int = None)
         base_name = info_file.stem.replace("_info", "")
         
         # For each info file, find all associated image files
-        image_files = list(info_file.parent.glob(f"{base_name}_*_im.jpg"))
+        image_files = []
+        for ext in ['.jpg', '.png']:
+            pattern = f"{base_name}_*_im{ext}"
+            image_files.extend(list(info_file.parent.glob(pattern)))
         
         for image_file in image_files:
             # Extract view index from image filename
             _, view_index = extract_frame_info(str(image_file))
             
             # Generate QA pairs for this view
-            qa_pairs = generate_qa_pairs(str(info_file), view_index)
-            
-            # Add to dataset
-            qa_dataset.append({
-                "image_path": str(image_file),
-                "info_path": str(info_file),
-                "qa_pairs": qa_pairs
-            })
-            
-            print(f"Processed {image_file.name}")
+            try:
+                qa_pairs = generate_qa_pairs(str(info_file), view_index)
+                
+                # Add to dataset
+                qa_dataset.append({
+                    "image_path": str(image_file),
+                    "info_path": str(info_file),
+                    "qa_pairs": qa_pairs
+                })
+                
+                print(f"Processed {image_file.name}")
+            except Exception as e:
+                print(f"Error processing {image_file.name}: {e}")
     
     # Save dataset to output file
     with open(output_file, 'w') as f:
@@ -566,7 +714,10 @@ def generate_balanced_qa_dataset(data_folder: str, output_file: str, samples_per
             base_name = info_file.stem.replace("_info", "")
             
             # For each info file, find all associated image files
-            image_files = list(info_file.parent.glob(f"{base_name}_*_im.jpg"))
+            image_files = []
+            for ext in ['.jpg', '.png']:
+                pattern = f"{base_name}_*_im{ext}"
+                image_files.extend(list(info_file.parent.glob(pattern)))
             
             for image_file in image_files:
                 if track_samples >= samples_per_track:
@@ -576,17 +727,20 @@ def generate_balanced_qa_dataset(data_folder: str, output_file: str, samples_per
                 _, view_index = extract_frame_info(str(image_file))
                 
                 # Generate QA pairs for this view
-                qa_pairs = generate_qa_pairs(str(info_file), view_index)
-                
-                # Add to dataset
-                qa_dataset.append({
-                    "image_path": str(image_file),
-                    "info_path": str(info_file),
-                    "qa_pairs": qa_pairs
-                })
-                
-                track_samples += 1
-                print(f"Processed {image_file.name} - {track_samples}/{samples_per_track} for {track_name}")
+                try:
+                    qa_pairs = generate_qa_pairs(str(info_file), view_index)
+                    
+                    # Add to dataset
+                    qa_dataset.append({
+                        "image_path": str(image_file),
+                        "info_path": str(info_file),
+                        "qa_pairs": qa_pairs
+                    })
+                    
+                    track_samples += 1
+                    print(f"Processed {image_file.name} - {track_samples}/{samples_per_track} for {track_name}")
+                except Exception as e:
+                    print(f"Error processing {image_file.name}: {e}")
                 
             if track_samples >= samples_per_track:
                 break
@@ -633,23 +787,81 @@ def format_for_vlm_training(qa_dataset_path: str, output_file: str):
     print(f"Formatted {len(vlm_dataset)} QA pairs for VLM training, saved to {output_file}")
 
 
-
-
-"""
-Usage Example: Visualize QA pairs for a specific file and view:
-   python generate_qa.py check --info_file ../data/valid/00000_info.json --view_index 0
-
-You probably need to add additional commands to Fire below.
-"""
+def list_available_views(info_file: str):
+    """
+    List all available view indices for a given info file.
+    
+    Args:
+        info_file: Path to the info.json file
+    """
+    info_path = Path(info_file)
+    if not info_path.exists():
+        print(f"Error: Info file {info_file} not found")
+        return
+        
+    # Get the base name without the "_info" suffix
+    base_name = info_path.stem.replace("_info", "")
+    
+    # Find all image files matching the pattern
+    all_images = []
+    for ext in ['.jpg', '.png']:
+        pattern = f"{base_name}_*_im{ext}"
+        all_images.extend(list(info_path.parent.glob(pattern)))
+    
+    if not all_images:
+        print(f"No image files found for {info_file}")
+        return
+        
+    print(f"Available view indices for {info_file}:")
+    for img in sorted(all_images, key=lambda x: extract_frame_info(str(x))[1]):
+        frame_id, view_index = extract_frame_info(str(img))
+        print(f"  - {img.name} (view index: {view_index})")
+    
+    # Also check the detections in the info.json file
+    try:
+        with open(info_file) as f:
+            info = json.load(f)
+            
+        if "detections" in info:
+            num_views = len(info["detections"])
+            print(f"\nInfo file has detections for {num_views} views (indices 0-{num_views-1})")
+        else:
+            print("\nWarning: No 'detections' field found in info file")
+    except Exception as e:
+        print(f"\nError reading info file: {e}")
 
 
 def main():
-    fire.Fire({
-        "check": check_qa_pairs,
-        "process": process_dataset,
-        "balanced": generate_balanced_qa_dataset,
-        "format": format_for_vlm_training
-    })
+    """
+    Main entry point for the script. Provides a command-line interface using the Fire library.
+    
+    Available commands:
+    - check: Check QA pairs for a specific file and view index
+    - process: Process the entire dataset and generate QA pairs
+    - balanced: Generate a balanced QA dataset with equal representation from all tracks
+    - format: Format the QA dataset for VLM training
+    - list_views: List all available view indices for a given info file
+    
+    Examples:
+    - python generate_qa.py check --info_file=../data/valid/00000_info.json --view_index=0
+    - python generate_qa.py process --data_folder=../data/valid --output_file=qa_dataset.json
+    - python generate_qa.py balanced --data_folder=../data/valid --output_file=balanced_qa_dataset.json
+    - python generate_qa.py format --qa_dataset_path=qa_dataset.json --output_file=vlm_dataset.json
+    - python generate_qa.py list_views --info_file=../data/valid/00000_info.json
+    """
+    try:
+        fire.Fire({
+            "check": check_qa_pairs,
+            "process": process_dataset,
+            "balanced": generate_balanced_qa_dataset,
+            "format": format_for_vlm_training,
+            "list_views": list_available_views
+        })
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()
