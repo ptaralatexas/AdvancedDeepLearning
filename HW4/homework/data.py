@@ -16,6 +16,10 @@ class VQADataset:
             split: Dataset split ('train', 'valid_grader', 'train_demo')
             data_dir: Directory containing the dataset (default: DATA_DIR)
         """
+        # Convert string to Path if needed
+        if data_dir is not None and not isinstance(data_dir, Path):
+            data_dir = Path(data_dir)
+            
         self.data_dir = data_dir or DATA_DIR
 
         # Load all QA pairs for the split
