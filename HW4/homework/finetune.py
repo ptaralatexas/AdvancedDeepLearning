@@ -109,11 +109,11 @@ class VQADatasetForTraining(Dataset):
 
 def train(
     data_dir: Path | None = None,
-    train_dataset_name: str = "balanced_dataset_qa_pairs",
+    train_dataset_name: str = "train_qa_pairs",
     output_dir: str = "homework/vlm_model",
-    num_train_epochs: int = 0.05,  # use only 0.05 epoch for training
-    per_device_train_batch_size: int = 8,
-    gradient_accumulation_steps: int = 4,
+    num_train_epochs: int = 3,  
+    per_device_train_batch_size: int = 4,
+    gradient_accumulation_steps: int = 8,
     learning_rate: float = 5e-4,
     lora_r: int = 8,
     lora_alpha: int = 32,
