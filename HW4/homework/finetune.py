@@ -253,8 +253,8 @@ def demo_train():
     )
 
 
-def test_model(ckpt_path: str, val_dataset: str = "valid_grader"):
-    testset = VQADataset(val_dataset)
+def test_model(ckpt_path: str, val_dataset: str = "valid", data_dir: str = None):
+    testset = VQADataset(split=val_dataset, data_dir=data_dir)
 
     llm = load(ckpt_path)
 
