@@ -194,9 +194,9 @@ def extract_kart_objects(
     scale_y = img_height / ORIGINAL_HEIGHT
 
     # Extract kart character names from info
-    kart_names = {}
-    if "kart_names" in info:
-        kart_names = info["kart_names"]
+    kart_names = []
+    if "karts" in info:
+       kart_names = info["karts"]
 
     # Image center coordinates
     image_center_x = img_width / 2
@@ -241,8 +241,12 @@ def extract_kart_objects(
         # Calculate distance to image center
         distance_to_center = ((center_x - image_center_x) ** 2 + (center_y - image_center_y) ** 2) ** 0.5
 
-        # Get kart name from the kart_names dict, or use a default name
-        kart_name = kart_names.get(str(track_id), f"Kart {track_id}")
+        # Later in the code...
+        # Get kart name using the track_id as an index into the kart_names list
+        if isinstance(kart_names, list) and 0 <= track_id < len(kart_names):
+            kart_name = kart_names[track_id]
+        else:
+            kart_name = f"Kart {track_id}"
         
         # Identify ego car (typically track_id 0)
         is_ego = (track_id == 0)
@@ -291,8 +295,8 @@ def extract_track_info(info_path: str) -> str:
         return "Unknown Track"
 
     # Extract track name from the info
-    if "track_name" in info:
-        return info["track_name"]
+    if "track" in info:
+        return info["track"]
     
     # If track_name is not available, try to get it from filename or return default
     info_file = Path(info_path)
@@ -545,7 +549,7 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     qa_pairs = []
     
     # 1. Ego car question (if we have one)
-    if ego_car and ego_car.get("is_ego", False):
+    if ego_car and ego_car.get("is_ego", True):
         qa_pairs.append({
             "question": "What kart is the ego car (player's kart)?",
             "answer": ego_car["kart_name"]
