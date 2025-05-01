@@ -172,6 +172,7 @@ def extract_kart_objects(
         - kart_name: The name of the kart
         - center: (x, y) coordinates of the kart's center
         - is_center_kart: Boolean indicating if this is the kart closest to image center
+        - is_ego: Boolean indicating if this is the ego car (same as center kart)
         - bounding_box: (x1, y1, x2, y2) coordinates of the bounding box
     """
     # Read the info.json file
@@ -196,7 +197,7 @@ def extract_kart_objects(
     # Extract kart character names from info
     kart_names = []
     if "karts" in info:
-       kart_names = info["karts"]
+        kart_names = info["karts"]
 
     # Image center coordinates
     image_center_x = img_width / 2
@@ -241,23 +242,19 @@ def extract_kart_objects(
         # Calculate distance to image center
         distance_to_center = ((center_x - image_center_x) ** 2 + (center_y - image_center_y) ** 2) ** 0.5
 
-        # Later in the code...
         # Get kart name using the track_id as an index into the kart_names list
         if isinstance(kart_names, list) and 0 <= track_id < len(kart_names):
             kart_name = kart_names[track_id]
         else:
             kart_name = f"Kart {track_id}"
         
-        # Identify ego car (typically track_id 0)
-        is_ego = (track_id == 0)
-
-        # Create kart object
+        # Create kart object (without ego designation yet)
         kart = {
             "instance_id": track_id,
             "kart_name": kart_name,
             "center": (center_x, center_y),
             "is_center_kart": False,  # Will update this later
-            "is_ego": is_ego,
+            "is_ego": False,  # Will update this later
             "bounding_box": (x1_scaled, y1_scaled, x2_scaled, y2_scaled),
             "distance_to_center": distance_to_center
         }
@@ -269,12 +266,12 @@ def extract_kart_objects(
             min_center_distance = distance_to_center
             center_kart_index = len(karts) - 1
 
-    # Mark the center kart
+    # Mark the center kart as the ego car
     if center_kart_index >= 0:
         karts[center_kart_index]["is_center_kart"] = True
+        karts[center_kart_index]["is_ego"] = True  # Ego car is the one closest to center
 
     return karts
-
 
 def extract_track_info(info_path: str) -> str:
     """
@@ -528,19 +525,12 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
             }
         ]
     
-    # Find ego car
+    # Find ego car (now it's the center kart)
     ego_car = None
     for kart in karts:
-        if kart.get("is_ego", False):
+        if kart.get("is_center_kart", False):
             ego_car = kart
             break
-    
-    # If no ego car is found, use the center kart as reference
-    if ego_car is None:
-        for kart in karts:
-            if kart.get("is_center_kart", False):
-                ego_car = kart
-                break
     
     # If still no reference kart, use the first one
     if ego_car is None and karts:
@@ -549,7 +539,7 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     qa_pairs = []
     
     # 1. Ego car question (if we have one)
-    if ego_car and ego_car.get("is_ego", True):
+    if ego_car:
         qa_pairs.append({
             "question": "What kart is the ego car?",
             "answer": ego_car["kart_name"]
@@ -557,13 +547,13 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     
     # 2. Total karts question
     qa_pairs.append({
-        "question": "How many karts are visible in this image?",
+        "question": "How many karts are there in the scenario?",
         "answer": str(len(karts))
     })
     
     # 3. Track information questions
     qa_pairs.append({
-        "question": "What track is shown in this image?",
+        "question": "What track is this?",
         "answer": track_name
     })
     
@@ -578,39 +568,44 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
         # Get ego car's center position
         ego_x, ego_y = ego_car["center"]
         
-        # Assuming y-axis points downward (higher y-value means lower on screen)
-        # and x-axis points rightward (higher x-value means more to the right)
         for kart in karts:
             if kart is ego_car:
                 continue
                 
             kart_x, kart_y = kart["center"]
             
-            # 4. Relative position questions for each kart
-            # Left/Right position
+            # Left/Right position based on x-axis
             if kart_x < ego_x:
-                position_x = "to the left of"
+                position_x = "left"
                 karts_left += 1
             else:
-                position_x = "to the right of"
+                position_x = "right"
                 karts_right += 1
                 
-            # Front/Behind position (in racing games, usually lower y means further ahead)
+            # Front/Behind position based ONLY on y-axis
+            # In images, lower y value is higher in the image (toward the top)
             if kart_y < ego_y:
-                position_y = "in front of"
+                position_y = "front"
                 karts_front += 1
             else:
-                position_y = "behind"
+                position_y = "back"  # Using "back" instead of "behind" to match formatting
                 karts_behind += 1
                 
+            # Individual position questions
             qa_pairs.append({
                 "question": f"Is {kart['kart_name']} to the left or right of the ego car?",
-                "answer": position_x.split(" ")[2] if "to the" in position_x else position_x
+                "answer": position_x
             })
             
             qa_pairs.append({
                 "question": f"Is {kart['kart_name']} in front of or behind the ego car?",
-                "answer": position_y if position_y != "in front of" else "in front"
+                "answer": position_y
+            })
+            
+            # Combined position question
+            qa_pairs.append({
+                "question": f"Where is {kart['kart_name']} relative to the ego car?",
+                "answer": f"{position_y} and {position_x}"
             })
         
         # 5. Counting questions
@@ -738,106 +733,9 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
                         "question": f"Among {kart1['kart_name']}, {kart2['kart_name']}, and {kart3['kart_name']}, which two karts are closest to each other?",
                         "answer": closest
                     })
-            
-    # 8. Size comparison questions
-    if len(karts) > 1:
-        # Sort karts by bounding box size (area)
-        karts_by_size = sorted(karts, key=lambda k: 
-                          (k["bounding_box"][2] - k["bounding_box"][0]) * 
-                          (k["bounding_box"][3] - k["bounding_box"][1]))
-        
-        smallest_kart = karts_by_size[0]
-        largest_kart = karts_by_size[-1]
-        
-        qa_pairs.append({
-            "question": "Which kart appears largest in the image?",
-            "answer": largest_kart["kart_name"]
-        })
-        
-        qa_pairs.append({
-            "question": "Which kart appears smallest in the image?",
-            "answer": smallest_kart["kart_name"]
-        })
-        
-        # Compare sizes between pairs of karts
-        for i in range(len(karts)):
-            for j in range(i+1, len(karts)):
-                kart1 = karts[i]
-                kart2 = karts[j]
-                
-                # Calculate areas
-                area1 = ((kart1["bounding_box"][2] - kart1["bounding_box"][0]) * 
-                         (kart1["bounding_box"][3] - kart1["bounding_box"][1]))
-                area2 = ((kart2["bounding_box"][2] - kart2["bounding_box"][0]) * 
-                         (kart2["bounding_box"][3] - kart2["bounding_box"][1]))
-                
-                larger = kart1["kart_name"] if area1 > area2 else kart2["kart_name"]
-                
-                qa_pairs.append({
-                    "question": f"Which appears larger in the image: {kart1['kart_name']} or {kart2['kart_name']}?",
-                    "answer": larger
-                })
-                
-    # 9. Questions about kart quadrants (dividing image into 4 sections)
-    if len(karts) > 0:
-        # Define quadrants (top-left, top-right, bottom-left, bottom-right)
-        mid_x = img_width / 2
-        mid_y = img_height / 2
-        
-        quadrants = {
-            "top-left": [],
-            "top-right": [],
-            "bottom-left": [],
-            "bottom-right": []
-        }
-        
-        for kart in karts:
-            x, y = kart["center"]
-            if x < mid_x and y < mid_y:
-                quadrants["top-left"].append(kart["kart_name"])
-            elif x >= mid_x and y < mid_y:
-                quadrants["top-right"].append(kart["kart_name"])
-            elif x < mid_x and y >= mid_y:
-                quadrants["bottom-left"].append(kart["kart_name"])
-            else:
-                quadrants["bottom-right"].append(kart["kart_name"])
-        
-        for quadrant, karts_in_quadrant in quadrants.items():
-            qa_pairs.append({
-                "question": f"How many karts are in the {quadrant} quadrant of the image?",
-                "answer": str(len(karts_in_quadrant))
-            })
-            
-            if karts_in_quadrant:
-                qa_pairs.append({
-                    "question": f"Which karts are in the {quadrant} quadrant of the image?",
-                    "answer": ", ".join(karts_in_quadrant) if karts_in_quadrant else "None"
-                })
     
-    # 10. Compositional questions
-    if len(karts) > 1:
-        # Compositional questions combining position and other attributes
-        for kart in karts:
-            # Questions about karts relative to this one
-            karts_to_left = [k for k in karts if k["center"][0] < kart["center"][0] and k is not kart]
-            karts_to_right = [k for k in karts if k["center"][0] > kart["center"][0] and k is not kart]
-            
-            if karts_to_left:
-                closest_left = max(karts_to_left, key=lambda k: k["center"][0])
-                qa_pairs.append({
-                    "question": f"Which kart is immediately to the left of {kart['kart_name']}?",
-                    "answer": closest_left["kart_name"]
-                })
-                
-            if karts_to_right:
-                closest_right = min(karts_to_right, key=lambda k: k["center"][0])
-                qa_pairs.append({
-                    "question": f"Which kart is immediately to the right of {kart['kart_name']}?",
-                    "answer": closest_right["kart_name"]
-                })
-    
-    # Generate multiple variations for each question
-    return multiply_qa_variations(qa_pairs)
+    # Generate variations but make sure to keep the format consistent with balanced_qa_pairs.json
+    return qa_pairs
 
 
 def find_image_file(info_file: str, view_index: int) -> str:
