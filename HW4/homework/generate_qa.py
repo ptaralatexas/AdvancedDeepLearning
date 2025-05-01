@@ -629,110 +629,110 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
             "answer": str(karts_behind)
         })
     
-    # 6. Positional questions (not dependent on ego car)
-    if len(karts) > 0:
-        leftmost_kart = min(karts, key=lambda k: k["center"][0])
-        rightmost_kart = max(karts, key=lambda k: k["center"][0])
-        topmost_kart = min(karts, key=lambda k: k["center"][1])
-        bottommost_kart = max(karts, key=lambda k: k["center"][1])
+    # # 6. Positional questions (not dependent on ego car)
+    # if len(karts) > 0:
+    #     leftmost_kart = min(karts, key=lambda k: k["center"][0])
+    #     rightmost_kart = max(karts, key=lambda k: k["center"][0])
+    #     topmost_kart = min(karts, key=lambda k: k["center"][1])
+    #     bottommost_kart = max(karts, key=lambda k: k["center"][1])
         
-        qa_pairs.append({
-            "question": "Which kart is the leftmost in the image?",
-            "answer": leftmost_kart["kart_name"]
-        })
+    #     qa_pairs.append({
+    #         "question": "Which kart is the leftmost in the image?",
+    #         "answer": leftmost_kart["kart_name"]
+    #     })
         
-        qa_pairs.append({
-            "question": "Which kart is the rightmost in the image?",
-            "answer": rightmost_kart["kart_name"]
-        })
+    #     qa_pairs.append({
+    #         "question": "Which kart is the rightmost in the image?",
+    #         "answer": rightmost_kart["kart_name"]
+    #     })
         
-        qa_pairs.append({
-            "question": "Which kart is highest in the image?",
-            "answer": topmost_kart["kart_name"]
-        })
+    #     qa_pairs.append({
+    #         "question": "Which kart is highest in the image?",
+    #         "answer": topmost_kart["kart_name"]
+    #     })
         
-        qa_pairs.append({
-            "question": "Which kart is lowest in the image?",
-            "answer": bottommost_kart["kart_name"]
-        })
+    #     qa_pairs.append({
+    #         "question": "Which kart is lowest in the image?",
+    #         "answer": bottommost_kart["kart_name"]
+    #     })
     
-    # 7. Distance questions
-    if len(karts) > 1:
-        # Find the two closest karts
-        min_distance = float('inf')
-        closest_pair = None
+    # # 7. Distance questions
+    # if len(karts) > 1:
+    #     # Find the two closest karts
+    #     min_distance = float('inf')
+    #     closest_pair = None
         
-        for i in range(len(karts)):
-            for j in range(i+1, len(karts)):
-                kart1 = karts[i]
-                kart2 = karts[j]
+    #     for i in range(len(karts)):
+    #         for j in range(i+1, len(karts)):
+    #             kart1 = karts[i]
+    #             kart2 = karts[j]
                 
-                # Calculate Euclidean distance between the two karts
-                x1, y1 = kart1["center"]
-                x2, y2 = kart2["center"]
-                distance = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+    #             # Calculate Euclidean distance between the two karts
+    #             x1, y1 = kart1["center"]
+    #             x2, y2 = kart2["center"]
+    #             distance = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
                 
-                if distance < min_distance:
-                    min_distance = distance
-                    closest_pair = (kart1["kart_name"], kart2["kart_name"])
+    #             if distance < min_distance:
+    #                 min_distance = distance
+    #                 closest_pair = (kart1["kart_name"], kart2["kart_name"])
         
-        if closest_pair:
-            qa_pairs.append({
-                "question": "Which two karts are closest to each other?",
-                "answer": f"{closest_pair[0]} and {closest_pair[1]}"
-            })
+    #     if closest_pair:
+    #         qa_pairs.append({
+    #             "question": "Which two karts are closest to each other?",
+    #             "answer": f"{closest_pair[0]} and {closest_pair[1]}"
+    #         })
             
-        # Find the two furthest karts
-        max_distance = 0
-        furthest_pair = None
+    #     # Find the two furthest karts
+    #     max_distance = 0
+    #     furthest_pair = None
         
-        for i in range(len(karts)):
-            for j in range(i+1, len(karts)):
-                kart1 = karts[i]
-                kart2 = karts[j]
+    #     for i in range(len(karts)):
+    #         for j in range(i+1, len(karts)):
+    #             kart1 = karts[i]
+    #             kart2 = karts[j]
                 
-                # Calculate Euclidean distance between the two karts
-                x1, y1 = kart1["center"]
-                x2, y2 = kart2["center"]
-                distance = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+    #             # Calculate Euclidean distance between the two karts
+    #             x1, y1 = kart1["center"]
+    #             x2, y2 = kart2["center"]
+    #             distance = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
                 
-                if distance > max_distance:
-                    max_distance = distance
-                    furthest_pair = (kart1["kart_name"], kart2["kart_name"])
+    #             if distance > max_distance:
+    #                 max_distance = distance
+    #                 furthest_pair = (kart1["kart_name"], kart2["kart_name"])
         
-        if furthest_pair:
-            qa_pairs.append({
-                "question": "Which two karts are furthest from each other?",
-                "answer": f"{furthest_pair[0]} and {furthest_pair[1]}"
-            })
+    #     if furthest_pair:
+    #         qa_pairs.append({
+    #             "question": "Which two karts are furthest from each other?",
+    #             "answer": f"{furthest_pair[0]} and {furthest_pair[1]}"
+    #         })
             
-        # Compare distances of pairs of karts
-        for i in range(len(karts)):
-            for j in range(i+1, len(karts)):
-                for k in range(j+1, len(karts)):
-                    kart1 = karts[i]
-                    kart2 = karts[j]
-                    kart3 = karts[k]
+    #     # Compare distances of pairs of karts
+    #     for i in range(len(karts)):
+    #         for j in range(i+1, len(karts)):
+    #             for k in range(j+1, len(karts)):
+    #                 kart1 = karts[i]
+    #                 kart2 = karts[j]
+    #                 kart3 = karts[k]
                     
-                    x1, y1 = kart1["center"]
-                    x2, y2 = kart2["center"]
-                    x3, y3 = kart3["center"]
+    #                 x1, y1 = kart1["center"]
+    #                 x2, y2 = kart2["center"]
+    #                 x3, y3 = kart3["center"]
                     
-                    dist12 = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
-                    dist13 = ((x1 - x3) ** 2 + (y1 - y3) ** 2) ** 0.5
-                    dist23 = ((x2 - x3) ** 2 + (y2 - y3) ** 2) ** 0.5
+    #                 dist12 = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+    #                 dist13 = ((x1 - x3) ** 2 + (y1 - y3) ** 2) ** 0.5
+    #                 dist23 = ((x2 - x3) ** 2 + (y2 - y3) ** 2) ** 0.5
                     
-                    if dist12 < dist13 and dist12 < dist23:
-                        closest = f"{kart1['kart_name']} and {kart2['kart_name']}"
-                    elif dist13 < dist12 and dist13 < dist23:
-                        closest = f"{kart1['kart_name']} and {kart3['kart_name']}"
-                    else:
-                        closest = f"{kart2['kart_name']} and {kart3['kart_name']}"
+    #                 if dist12 < dist13 and dist12 < dist23:
+    #                     closest = f"{kart1['kart_name']} and {kart2['kart_name']}"
+    #                 elif dist13 < dist12 and dist13 < dist23:
+    #                     closest = f"{kart1['kart_name']} and {kart3['kart_name']}"
+    #                 else:
+    #                     closest = f"{kart2['kart_name']} and {kart3['kart_name']}"
                     
-                    qa_pairs.append({
-                        "question": f"Among {kart1['kart_name']}, {kart2['kart_name']}, and {kart3['kart_name']}, which two karts are closest to each other?",
-                        "answer": closest
-                    })
+    #                 qa_pairs.append({
+    #                     "question": f"Among {kart1['kart_name']}, {kart2['kart_name']}, and {kart3['kart_name']}, which two karts are closest to each other?",
+    #                     "answer": closest
+    #                 })
     
     # Generate variations but make sure to keep the format consistent with balanced_qa_pairs.json
     return qa_pairs
@@ -1051,7 +1051,7 @@ def generate_balanced_qa_dataset(data_folder: str, output_file: str, samples_per
 
 def process_all_views_dataset(data_folder: str, output_file: str):
     """
-    Process all views for every info file and generate extensive QA pairs.
+    Process all views for every info file and generate QA pairs without variations.
     
     Args:
         data_folder: Path to the folder containing the data
@@ -1079,20 +1079,17 @@ def process_all_views_dataset(data_folder: str, output_file: str):
                     image_file = find_image_file(str(info_file), view_index)
                     
                     if image_file:
-                        # Generate basic QA pairs
-                        basic_qa_pairs = generate_qa_pairs(str(info_file), view_index)
-                        
-                        # Generate additional questions with variations
-                        extended_qa_pairs = multiply_qa_variations(basic_qa_pairs)
+                        # Generate basic QA pairs without variations
+                        qa_pairs = generate_qa_pairs(str(info_file), view_index)
                         
                         # Add to dataset
                         qa_dataset.append({
                             "image_path": image_file,
                             "info_path": str(info_file),
-                            "qa_pairs": extended_qa_pairs
+                            "qa_pairs": qa_pairs
                         })
                         
-                        print(f"  - Generated {len(extended_qa_pairs)} QA pairs for view {view_index}")
+                        print(f"  - Generated {len(qa_pairs)} QA pairs for view {view_index}")
                 
                 # If multiple views are available, generate multi-view questions
                 if num_views > 1:
@@ -1123,7 +1120,6 @@ def process_all_views_dataset(data_folder: str, output_file: str):
     
     print(f"Generated {len(qa_dataset)} samples with a total of {total_qa_pairs} QA pairs")
     print(f"Saved to {output_file}")
-
 
 def format_for_vlm_training(qa_dataset_path: str, output_file: str):
     """
