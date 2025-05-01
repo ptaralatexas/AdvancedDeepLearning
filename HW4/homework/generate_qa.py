@@ -519,11 +519,11 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     if not karts:
         return [
             {
-                "question": "How many karts are visible in this image?",
+                "question": "How many karts are there in the scenario?",
                 "answer": "0"
             },
             {
-                "question": "What track is shown in this image?",
+                "question": "What track is this?",
                 "answer": track_name
             }
         ]
@@ -551,7 +551,7 @@ def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img
     # 1. Ego car question (if we have one)
     if ego_car and ego_car.get("is_ego", True):
         qa_pairs.append({
-            "question": "What kart is the ego car (player's kart)?",
+            "question": "What kart is the ego car?",
             "answer": ego_car["kart_name"]
         })
     
