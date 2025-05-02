@@ -11,7 +11,7 @@ class VQADataset:
     def __init__(self, split: str, data_dir: Path = None, max_samples: int = None):
         """
         Initialize the VQA dataset.
-
+        
         Args:
             split: Dataset split ('train', 'valid_grader', 'train_demo')
             data_dir: Directory containing the dataset (default: DATA_DIR)
@@ -21,21 +21,39 @@ class VQADataset:
             data_dir = Path(data_dir)
             
         self.data_dir = data_dir or DATA_DIR
-
+        
         # Load all QA pairs for the split
         self.qa_pairs = []
-
-        # Find all QA pair files for the split
-        qa_files = list(self.data_dir.glob(f"{split}/*_qa_pairs.json"))
-
-        for qa_file in qa_files:
-            with open(qa_file) as f:
-                qa_pairs = json.load(f)
-                self.qa_pairs.extend(qa_pairs)
-
+        
+        # Check if split directly refers to a JSON file
+        if split.endswith('.json'):
+            qa_file = self.data_dir / split
+            print(f"Looking for file at: {qa_file}")
+            if qa_file.exists():
+                with open(qa_file) as f:
+                    self.qa_pairs = json.load(f)
+            else:
+                print(f"File not found: {qa_file}")
+        else:
+            # Look for files matching both patterns
+            print(f"Checking for files in: {self.data_dir}")
+            qa_files = list(self.data_dir.glob(f"{split}*_qa_pairs.json"))
+            if not qa_files:
+                # Try direct match with .json extension
+                direct_file = self.data_dir / f"{split}.json"
+                if direct_file.exists():
+                    qa_files = [direct_file]
+                    
+            print(f"Found files: {[f.name for f in qa_files]}")
+                
+            for qa_file in qa_files:
+                with open(qa_file) as f:
+                    qa_pairs = json.load(f)
+                    self.qa_pairs.extend(qa_pairs)
+        
         if max_samples is not None:
             self.qa_pairs = self.qa_pairs[:max_samples]
-
+        
         print(f"Loaded {len(self.qa_pairs)} QA pairs for {split} split")
 
     def __len__(self):
