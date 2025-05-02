@@ -25,8 +25,22 @@ class VQADataset:
         # Load all QA pairs for the split
         self.qa_pairs = []
         
+        # Special case for valid_grader with balanced_qa_pairs.json
+        if split == "valid_grader":
+            qa_file = self.data_dir / "valid_grader" / "balanced_qa_pairs.json"
+            print(f"Checking for validation file at: {qa_file}")
+            if qa_file.exists():
+                with open(qa_file) as f:
+                    self.qa_pairs = json.load(f)
+            else:
+                print(f"Validation file not found: {qa_file}")
+                # Try alternative locations
+                alt_file = self.data_dir / "balanced_qa_pairs.json"
+                if alt_file.exists():
+                    with open(alt_file) as f:
+                        self.qa_pairs = json.load(f)
         # Check if split directly refers to a JSON file
-        if split.endswith('.json'):
+        elif split.endswith('.json'):
             qa_file = self.data_dir / split
             print(f"Looking for file at: {qa_file}")
             if qa_file.exists():
@@ -60,26 +74,31 @@ class VQADataset:
         return len(self.qa_pairs)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        """
-        Get a QA pair by index.
-
-        Args:
-            idx: Index of the QA pair
-
-        Returns:
-            Dictionary containing the QA pair and image path
-        """
         qa_pair = self.qa_pairs[idx]
-
-        # Construct the full path to the image
-        image_path = os.path.join(self.data_dir, qa_pair["image_file"])
-
+        
+        # Get the image file path
+        image_file = qa_pair["image_file"]
+        
+        # Handle the valid_grader case specifically
+        if "valid_grader" in str(self.data_dir) and "valid/" in image_file:
+            # Replace the data_dir with the parent directory + "valid"
+            parent_dir = os.path.dirname(self.data_dir)
+            valid_dir = os.path.join(parent_dir, "valid")
+            
+            # Extract just the filename from the path
+            filename = os.path.basename(image_file)
+            
+            # Create the correct path
+            image_path = os.path.join(valid_dir, filename)
+        else:
+            # Regular case - join paths normally
+            image_path = os.path.join(self.data_dir, image_file)
+        
         return {
             "image_path": image_path,
             "question": qa_pair["question"],
             "answer": qa_pair["answer"],
         }
-
 
 @dataclass
 class VQABenchmarkResult:
