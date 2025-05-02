@@ -66,29 +66,7 @@ class VQADatasetForTraining(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
         item = self.dataset[idx]
-        
-        # Check which key is used for the image path
-        if "image_file" in item:
-            image_path = item["image_file"]
-        elif "image_path" in item:
-            image_path = item["image_path"]
-        elif "image" in item:
-            image_path = item["image"]
-        else:
-            raise KeyError(f"Could not find image path in item keys: {list(item.keys())}")
-        
-        # Properly handle the path to avoid duplication
-        # If the path already contains "data/train" and we have a data_dir that ends with "data/train",
-        # we need to extract just the filename
-        if "data/train/" in image_path and hasattr(self.dataset, "data_dir"):
-            # Extract just the filename (the last part of the path)
-            filename = os.path.basename(image_path)
-            # Create the correct path by joining with the data directory
-            image_path = os.path.join(self.dataset.data_dir, filename)
-        
-        # Open the image file
-        image = Image.open(image_path).convert("RGB")
-        
+        image = Image.open(item["image_path"]).convert("RGB")
         # Prepare input text in chat format
         input_message = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": item["question"]}]}]
         prompt = self.processor.apply_chat_template(input_message, add_generation_prompt=True)
@@ -128,6 +106,7 @@ class VQADatasetForTraining(Dataset):
             "pixel_values": inputs["pixel_values"].squeeze(0),
             "labels": labels.long(),
         }
+
 def train(
     data_dir: Path | None = None,
     train_dataset_name: str = "train_qa_pairs.json",
